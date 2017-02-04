@@ -1,6 +1,11 @@
 # mapreduce
 A set of MapReduce programs to process brain images
+---
+##Histogram Creation
 
+Program to generate the histogram of given nifti image. <br/>
+Note: Data binning is not currently implemented and thus bin size is always 1.
+ 
 ###Java implementation
 To run:<br/>
 <code>hadoop jar GetHistogram.jar GetHistogram <input file> <output folder></code>
@@ -15,12 +20,9 @@ To run:<br/>
 
 
 Dependencies: nibabel - http://nipy.org/nibabel/
-
----
+--
 Note: Input file must be a text file containing the absolute file paths to all nii.tar.gz images.
 <br/> ex. filenames.txt
 <br/> /home/usr/img1.nii.tar.gz
 <br/> /home/usr/img2.nii.tar.gz
-
-For the python implementation, the input images found in the input text file currently need to be 2d slices of the 3d image.
-
+---
