@@ -3,7 +3,7 @@ A set of MapReduce programs to process brain images
 
 
 
-##Histogram Creation
+##Histogram generation
 
 Program to generate the histogram of given nifti image. <br/>
 Note: Data binning is not currently implemented and thus bin size is always 1.
