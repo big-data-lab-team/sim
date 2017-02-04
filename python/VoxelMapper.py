@@ -5,16 +5,24 @@ import  numpy as np
 
 for line in sys.stdin:
 	line = line.strip()
-	slice_file = os.path.join("/data/test/2dslice/" + line)
+	slice_file = os.path.join(line)
 	
         #open nifti image
         slice = nib.load(slice_file)
-	data = slice.get_data()
+	data = slice.get_data().flat
+ 
+        histogram = {}
+	    
+        #iterate throught the voxels and add them to dictionary with an initial count of 1
+        #if same voxel value is encountered again, increment the count of the voxel value by one
+	for key in data:
+            
+            if key in histogram:
+                histogram[key] += 1
+            else:
+                histogram[key] = 1
 
-        #iterate throught the voxels and assign a value of 1 to each voxel encountered
-	for row in data:
-		for key in row:
-			value = 1
-			print("%s\t%d" % (key, value))
+        for key, value in histogram.items():
+            print("%s\t%d" % (key, value))
 		
 

@@ -5,7 +5,6 @@ prev_key = None
 value_total = 0
 
 for input_line in sys.stdin:
-	input_line = input_line.strip()
 	
         current_key, value = input_line.split("\t", 1)
 	value = int(value)
