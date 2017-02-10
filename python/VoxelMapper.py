@@ -25,7 +25,11 @@ def mapper(bin_size, data_max, data_min):
             #iterate throught the voxels and add them to dictionary with an initial count of 1
             #if same voxel value is encountered again, increment the count of the voxel value by one
             for value in data:
-                voxel_value = value.item()
+                try:
+                    voxel_value = value.item()
+                except:
+                    print('Error: Voxel value could not be cast to a python scalar')
+                    sys.exit(0)
                 
                 #dictionary key will be in the form of (min, max) tuple. All values will be in min/max range, excluding the max, which will be the min value of the proceeding bin
                 if isinstance(value, numbers.Number):
