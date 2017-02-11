@@ -29,7 +29,7 @@ def mapper(bin_size, data_max, data_min):
                     voxel_value = value.item()
                 except:
                     print('Error: Voxel value could not be cast to a python scalar')
-                    sys.exit(0)
+                    sys.exit(1)
                 
                 #dictionary key will be in the form of (min, max) tuple. All values will be in min/max range, excluding the max, which will be the min value of the proceeding bin
                 if isinstance(value, numbers.Number):
@@ -74,7 +74,7 @@ def main():
         args= parser.parse_args()
     except:
         parser.print_usage()
-        sys.exit(0)
+        sys.exit(1)
 
     if args.num_bins:
         try:
@@ -87,12 +87,13 @@ def main():
                 data_min = 0
         except:
             print("Error: --num_bins argument must be in the format int float float*")
-            sys.exit(0)
+            sys.exit(1)
 
         try:
             bin_size = round((data_max - data_min) / number_bins, 5)
         except:
-            print('Error: --num_bins cannot be 0.')        
+            print('Error: --num_bins cannot be 0.')
+            sys.exit(1)        
 
     elif args.bin_range:
         try:
@@ -105,7 +106,7 @@ def main():
                 data_min = float(args.bin_range[0][2])
         except:
             print("Error: --bin_range argument must be in the format float float* float*")
-
+            sys.exit(1)
     
     try:
         if bin_size == 0:
@@ -114,6 +115,7 @@ def main():
             raise ValueError('min value cannot be greater or equal to max')
     except ValueError as error:
         print('Error:' +  error.args[0])
+        sys.exit(1)
 
     mapper(bin_size, data_max, data_min)
                     
