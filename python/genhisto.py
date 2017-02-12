@@ -21,7 +21,7 @@ def main():
     required.add_argument("-i", "--input_file", help="The input file", type=str, required=True)
     required.add_argument("-hj", "--hadoop_streaming_jar", help="The hadoop streaming jar", required=True)
 
-    args=parser.parse_args()
+    args = parser.parse_args()
     
     number_bins = args.num_bins
     bin_range = args.bin_range
@@ -39,7 +39,7 @@ def main():
 
     # will get the min/max value of the image if min/max is not already provided
     if(data_min == None or data_max == None):
-        find_min_max_command = 'hadoop jar {0} -D mapreduce.job.reduces=0 -D mapreduce.job.map={1} -input {2} -output {3} -mapper "python minMaxMapper.py" -file minMaxMapper.py | cat {3}/*| sort'.format(hadoop_jar, num_mappers, input_file, output_folder + '_temp')
+        find_min_max_command = 'hadoop jar {0} -D mapreduce.job.reduces=0 -D mapreduce.job.map={1} -input {2} -output {3} -mapper "python minmaxmap.py" -file minmaxmap.py'.format(hadoop_jar, num_mappers, input_file, output_folder + '_temp')
         #run bash command
         subprocess.call(find_min_max_command, shell=True)
 
@@ -70,7 +70,7 @@ def main():
     hadoop_streaming_args += ' -D mapreduce.job.map={0}'.format(num_mappers) if num_mappers is not None else ''
     
 
-    histogram_command = 'hadoop jar {0} {1} -input {2} -output {3} -mapper "python VoxelMapper.py {4}" -reducer "python VoxelCountReducer.py" -file VoxelMapper.py -file VoxelCountReducer.py'.format(hadoop_jar, hadoop_streaming_args, input_file, output_folder, args_for_mapper)
+    histogram_command = 'hadoop jar {0} {1} -input {2} -output {3} -mapper "python voxel_mapper.py {4}" -reducer "python voxel_count_reducer.py" -file voxel_mapper.py -file voxel_count_reducer.py'.format(hadoop_jar, hadoop_streaming_args, input_file, output_folder, args_for_mapper)
 
     #create histogram
     subprocess.call(histogram_command, shell=True)
