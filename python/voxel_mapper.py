@@ -36,7 +36,7 @@ def mapper(bin_size, data_max, data_min):
                     if (voxel_value < data_min or voxel_value > data_max):
                         continue
 
-                    remainder = (voxel_value - data_min) % bin_size
+                    remainder = (voxel_value - data_min) % bin_size if voxel_value >= 0 else -(voxel_value - data_min) % bin_size
 
                     #create bins. Bins intervals are of format [min, max[ (max is excluded)                    
                     min_bin_value = voxel_value - remainder if voxel_value - remainder >= data_min and voxel_value - remainder <= data_max else data_min 
