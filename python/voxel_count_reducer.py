@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import sys
 
 
@@ -7,7 +8,8 @@ value_total = 0
 for input_line in sys.stdin:
 	
         current_key, value = input_line.split("\t", 1)
-	value = int(value)
+        
+        value = int(value)
 
         #if current key is the same, increment value
 	if prev_key == current_key:
