@@ -18,7 +18,7 @@ Note: Data binning is not currently implemented for java thus bin size is always
 ###Python implementation
 
 To run:<br/>
-<code>python gethisto.py -hj  &lt;hadoop streaming jar&gt; -i &lt;input file &gt; -o &lt;output folder &gt; [Optional arguments]</code>
+<code>python gethisto.py -hj  &lt;hadoop streaming jar&gt; -i &lt;input file&gt; -o &lt;output folder&gt; [Optional arguments]</code>
 
 Optional arguments:
 * -nb (--num_bins) - the number of bins (int) in histogram output. If this option is selected, the bin_range argument cannot be set.
