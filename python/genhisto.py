@@ -1,6 +1,8 @@
 import argparse
 import subprocess
 import numpy as np
+import tempfile
+import sys
 
 def main():
 
@@ -37,24 +39,31 @@ def main():
 
     hadoop_jar = args.hadoop_streaming_jar
 
+    
     # will get the min/max value of the image if min/max is not already provided
     if(data_min == None or data_max == None):
-        find_min_max_command = 'hadoop jar {0} -D mapreduce.job.reduces=0 -D mapreduce.job.map={1} -input {2} -output {3} -mapper "python minmaxmap.py" -file minmaxmap.py'.format(hadoop_jar, num_mappers, input_file, output_folder + '_temp')
+
+        temp_dir = tempfile.mkdtemp() if 'file:///' not in output_folder else 'file:///$PWD' + tempfile.mkdtemp()
+
+        find_min_max_command = 'hadoop jar {0} -D mapreduce.job.reduces=0 -D mapreduce.job.map={1} -input {2} -output {3} -mapper "python minmaxmap.py" -file minmaxmap.py'.format(hadoop_jar, num_mappers, input_file, temp_dir)
         #run bash command
-        subprocess.call(find_min_max_command, shell=True)
+        if(subprocess.call(find_min_max_command, shell=True) != 0):
+            print("Error occured will attempting to determine min/max")
+            sys.exit(1)
+
 
         get_minmax_out = None
 
         #save minMax result to intermediate folder
         #should perhaps delete folder after result is extracted..
-        if 'file:///' not in output_folder:
-            get_minmax_out = 'hdfs dfs -cat {0}/* | sort'.format(output_folder + '_temp')
+        if 'file:///' not in temp_dir:
+            get_minmax_out = 'hdfs dfs -cat {0}/* | sort'.format(temp_dir)
         else:
-            get_minmax_out = 'cat {0}/* | sort'.format(output_folder.replace('file:///', '') + '_temp')
+            get_minmax_out = 'cat {0}/* | sort'.format(temp_dir.replace('file:///', '')) 
         
         #get mapreduce result
         result = subprocess.check_output(get_minmax_out, shell=True)
-        
+            
         try:
             data_min = float(result.split()[0]) if data_min is None else data_min
             data_max = float(result.split()[len(result.split()) - 1]) if data_max is None else data_max
