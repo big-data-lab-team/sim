@@ -29,7 +29,7 @@ for line in sys.stdin:
             if 'gz' in slice_file[-2:]: 
                 fh = FileHolder(fileobj=GzipFile(fileobj=BytesIO(reader.read())))
             else:
-                fh = FileHoder(fileobj=GzipFile(fileobj=BytesIO(input_stream)))
+                fh = FileHoder(fileobj=BytesIO(reader.read()))
         slice =  Nifti1Image.from_file_map({'header':fh, 'image':fh})
     else:
         slice = nib.load(slice_file)
