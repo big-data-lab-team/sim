@@ -17,23 +17,35 @@ for line in sys.stdin:
     line = line.split()
     slice_file = os.path.join(line[0])
     slice = None
+    
+    #TODO:will change to a temp file or overwrite input file. File  to be passed to mapper as an argument instead of fixed filename
+    #filename_list = "filenames_updated.txt"
 
-    #load nifti image
+    #create a temp file that will store filename, filesystem (i.e. local or hdfs), and if gzipped or not
+    #load nifti image from hdfs
     if not os.path.exists(slice_file):
         fh = None
 
         client = Config().get_client()
-
         with client.read(slice_file) as reader:
             #temporary non-recommended solution to determining if file is compressed. 
-            if 'gz' in slice_file[-2:]: 
+            if '.gz' in slice_file[-3:]: 
                 fh = FileHolder(fileobj=GzipFile(fileobj=BytesIO(reader.read())))
+                file_specs =  "{0}\tTrue\tTrue\n".format(slice_file)
             else:
                 fh = FileHoder(fileobj=BytesIO(reader.read()))
+                file_specs =  "{0}\tTrue\tFalse\n".format(slice_file)
         slice =  Nifti1Image.from_file_map({'header':fh, 'image':fh})
+        try:
+            client.write(filename_list, data=file_specs)
+     d  except:
+           client.write(filename_list, data=file_specs, append=True)
+ 
+    #load from local filesystem
     else:
         slice = nib.load(slice_file)
-    
+        with open(os.getcwd() + '/' + filename_list, 'a') as f:
+            f.write("{0}\tFalse\tFalse\n".format(slice_file))
     data = slice.get_data().flat
 
 
