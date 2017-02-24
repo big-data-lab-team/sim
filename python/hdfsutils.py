@@ -3,6 +3,7 @@ from hdfs import Config
 import nibabel as nib
 from gzip import GzipFile
 from io import BytesIO
+import sys
 
 class HDFSUtils:
     """Helper class for hdfs-related operations"""
@@ -31,14 +32,15 @@ class HDFSUtils:
         return uri.split(self.client.root)[1]       
 
     #returns the image loaded into nibabel
-    def get_slice(self, filepath, in_hdfs = None):
+    #function will also accept hdfs uris as filepath inputs
+    def load_nifti(self, filepath, in_hdfs = None):
         if in_hdfs is None:
             in_hdfs = self.is_hdfs_uri(filepath)
-            if in_hdfs:
-                filepath = self.hdfs_path(filepath)
             
         if in_hdfs:
             fh = None
+            #gets hdfs path in the case an hdfs uri was provided
+            filepath = self.hdfs_path(filepath)
             with self.client.read(filepath) as reader:
                 stream = reader.read()
                 if self.is_gzipped(filepath, stream):
@@ -54,20 +56,18 @@ class HDFSUtils:
     #checks is file is gzipped
     #by default a filepath is required, however this function will not work
     #with a filepath if file is located on HDFS. Therefore, if file is located
-    #on HDFS, the byte stream will also need to be provided   
+    #on HDFS, the byte stream (must contain at least the first two bytes) will also need to be provided   
     def is_gzipped(self, filepath, buff=None):
         mime = magic.Magic(mime=True)
         try:
             if buff is None:
                 if 'gzip' in mime.from_file(filepath):
                     return True
-                else:
-                    return False
+                return False
             else:
                 if 'gzip' in mime.from_buffer(buff):
                     return True
-                else:
-                    return False
+                return False
         except:
             print('ERROR occured while attempting to determine if file is gzipped')
             sys.exit(1)

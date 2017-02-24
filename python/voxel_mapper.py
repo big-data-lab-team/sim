@@ -1,14 +1,7 @@
 #!/usr/bin/env python
 import sys
 import os
-import nibabel as nib
-import  numpy as np
-import numbers
 import argparse
-from io import BytesIO
-from nibabel import FileHolder, Nifti1Image
-from gzip import GzipFile
-from hdfs import Config
 from hdfsutils import HDFSUtils
         
 def mapper(bin_size, data_max, data_min):
@@ -20,7 +13,7 @@ def mapper(bin_size, data_max, data_min):
             util = HDFSUtils()
 
             #load nifti image into nibabel
-            slice = util.get_slice(slice_file)
+            slice = util.load_nifti(slice_file)
             
             data = slice.get_data().flat
      
