@@ -7,6 +7,7 @@ from io import BytesIO
 from nibabel import FileHolder, Nifti1Image
 from gzip import GzipFile
 from hdfs import Config
+from hdfsutils import HDFSUtils
 
 #get largest and smallest possible float
 max = sys.float_info.min
@@ -16,24 +17,12 @@ for line in sys.stdin:
     line = line.strip()
     line = line.split()
     slice_file = os.path.join(line[0])
-    slice = None
 
-    #load nifti image
-    if not os.path.exists(slice_file):
-        fh = None
+    util = HDFSUtils()
 
-        client = Config().get_client()
+    #load nifti image into nibabel
+    slice = util.get_slice(slice_file)
 
-        with client.read(slice_file) as reader:
-            #temporary non-recommended solution to determining if file is compressed. 
-            if 'gz' in slice_file[-2:]: 
-                fh = FileHolder(fileobj=GzipFile(fileobj=BytesIO(reader.read())))
-            else:
-                fh = FileHoder(fileobj=BytesIO(reader.read()))
-        slice =  Nifti1Image.from_file_map({'header':fh, 'image':fh})
-    else:
-        slice = nib.load(slice_file)
-    
     data = slice.get_data().flat
 
 

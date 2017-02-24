@@ -4,6 +4,7 @@ import numpy as np
 import tempfile
 import sys
 import os
+from hdfsutils import HDFSUtils
 
 def main():
 
@@ -40,11 +41,12 @@ def main():
 
     hadoop_jar = args.hadoop_streaming_jar
 
-    
+    util = HDFSUtils()   
+ 
     # will get the min/max value of the image if min/max is not already provided
     if(data_min == None or data_max == None):
 
-        temp_dir = tempfile.mkdtemp() if 'file:///' not in output_folder else 'file://' + os.getcwd()  + tempfile.mkdtemp()
+        temp_dir = tempfile.mkdtemp() if not util.is_local(output_folder) else 'file://' + os.getcwd()  + tempfile.mkdtemp()
 
         find_min_max_command = 'hadoop jar {0} -D mapreduce.job.reduces=0 -D mapreduce.job.map={1} -input {2} -output {3} -mapper "python minmaxmap.py" -file minmaxmap.py'.format(hadoop_jar, num_mappers, input_file, temp_dir)
         #run bash command
@@ -57,7 +59,7 @@ def main():
 
         #save minMax result to intermediate folder
         #should perhaps delete folder after result is extracted..
-        if 'file:///' not in temp_dir:
+        if not util.is_local(temp_dir):
             get_minmax_out = 'hdfs dfs -cat {0}/* | sort -n '.format(temp_dir)
         else:
             get_minmax_out = 'cat {0}/* | sort -n '.format(temp_dir.replace('file://', '')) 

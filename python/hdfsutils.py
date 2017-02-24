@@ -17,10 +17,13 @@ class HDFSUtils:
             return True
         return False
 
-    #return the hdfs path
+    #return the hdfs path. Temp solution
     def hdfs_path(self, uri):
+        #if uri is not an hdfs uri, return the uri provided
+        if not self.is_hdfs_uri(uri): return uri
+
         if self.client.root is None:
-            #absolute path should begin at third slash since uris should be of format hdfs://host:port/abspath
+            #absolute path should begin at third slash since uris should be of format hdfs://host:port/path/to/file/or/folder
             n = 3
             path_split = uri.split('/')            
             return '/'.join(path_split[n:])
@@ -28,7 +31,12 @@ class HDFSUtils:
         return uri.split(self.client.root)[1]       
 
     #returns the image loaded into nibabel
-    def get_slice(self, filepath, in_hdfs):
+    def get_slice(self, filepath, in_hdfs = None):
+        if in_hdfs is None:
+            in_hdfs = self.is_hdfs_uri(filepath)
+            if in_hdfs:
+                filepath = self.hdfs_path(filepath)
+            
         if in_hdfs:
             fh = None
             with self.client.read(filepath) as reader:
