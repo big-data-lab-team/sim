@@ -33,7 +33,7 @@ Optional arguments:
 Dependencies: nibabel - http://nipy.org/nibabel/
 
 --
-Note: Input file must be a text file containing the absolute file paths to all nii.tar.gz images.
+Note: Input file must be a text file containing the absolute file paths to all nifti images.
 <br/> ex. filenames.txt
 <br/> /home/usr/img1.nii.tar.gz
 <br/> /home/usr/img2.nii.tar.gz

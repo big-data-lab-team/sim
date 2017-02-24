@@ -5,8 +5,11 @@ import nibabel as nib
 import  numpy as np
 import numbers
 import argparse
-
-
+from io import BytesIO
+from nibabel import FileHolder, Nifti1Image
+from gzip import GzipFile
+from hdfs import Config
+from hdfsutils import HDFSUtils
         
 def mapper(bin_size, data_max, data_min):
     for line in sys.stdin:
@@ -14,9 +17,11 @@ def mapper(bin_size, data_max, data_min):
             line = line.split()
             slice_file = os.path.join(line[0])
             
+            util = HDFSUtils()
 
-            #open nifti image
-            slice = nib.load(slice_file)
+            #load nifti image into nibabel
+            slice = util.get_slice(slice_file)
+            
             data = slice.get_data().flat
      
             histogram = {}

@@ -3,8 +3,11 @@ import sys
 import os
 import nibabel as nib
 import numpy as np
-
-
+from io import BytesIO
+from nibabel import FileHolder, Nifti1Image
+from gzip import GzipFile
+from hdfs import Config
+from hdfsutils import HDFSUtils
 
 #get largest and smallest possible float
 max = sys.float_info.min
@@ -15,8 +18,11 @@ for line in sys.stdin:
     line = line.split()
     slice_file = os.path.join(line[0])
 
-    #load nifti image
-    slice = nib.load(slice_file)
+    util = HDFSUtils()
+
+    #load nifti image into nibabel
+    slice = util.get_slice(slice_file)
+
     data = slice.get_data().flat
 
 
