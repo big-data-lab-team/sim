@@ -4,7 +4,6 @@ import numpy as np
 import tempfile
 import sys
 import os
-from hdfs import Config
 
 def main():
 
@@ -40,12 +39,12 @@ def main():
     output_folder = args.output
 
     hadoop_jar = args.hadoop_streaming_jar
-    current_local_dir = os.getcwd()
-    client = Config().get_client()
+
+    
     # will get the min/max value of the image if min/max is not already provided
     if(data_min == None or data_max == None):
 
-        temp_dir = tempfile.mkdtemp() if 'file:///' not in output_folder else 'file://' + current_local_dir  + tempfile.mkdtemp()
+        temp_dir = tempfile.mkdtemp() if 'file:///' not in output_folder else 'file://' + os.getcwd()  + tempfile.mkdtemp()
 
         find_min_max_command = 'hadoop jar {0} -D mapreduce.job.reduces=0 -D mapreduce.job.map={1} -input {2} -output {3} -mapper "python minmaxmap.py" -file minmaxmap.py'.format(hadoop_jar, num_mappers, input_file, temp_dir)
         #run bash command
@@ -56,26 +55,13 @@ def main():
 
         get_minmax_out = None
 
-        #TODO: use temp file or overwrite input file instead of using a hardcoded filename and send to minmaxmap.py as argument
-        filename_file = 'filenames_updated.txt'
-        hdfs_file = None        
-
-        #updated file containing filepaths to nifti images will be located on hdfs
-        if 'file:///' not in input_file:
-            filename_file = client.root + filename_file
-            hdfs_file = True
-        #update file containing filepaths to nifti images will be located on local fs
-        else:
-            filename_file = 'file://{0}/{1}'.format(current_local_dir, filename_file)
-            hdfs_file = False
-               
-     
         #save minMax result to intermediate folder
         #should perhaps delete folder after result is extracted..
         if 'file:///' not in temp_dir:
             get_minmax_out = 'hdfs dfs -cat {0}/* | sort -n '.format(temp_dir)
         else:
             get_minmax_out = 'cat {0}/* | sort -n '.format(temp_dir.replace('file://', '')) 
+        
         #get mapreduce result
         result = subprocess.check_output(get_minmax_out, shell=True)
             
@@ -94,17 +80,9 @@ def main():
     hadoop_streaming_args += ' -D mapreduce.job.map={0}'.format(num_mappers) if num_mappers is not None else ''
     
 
-    histogram_command = 'hadoop jar {0} {1} -input {2} -output {3} -mapper "python voxel_mapper.py {4}" -reducer "python voxel_count_reducer.py" -file voxel_mapper.py -file voxel_count_reducer.py'.format(hadoop_jar, hadoop_streaming_args, filename_file, output_folder, args_for_mapper)
+    histogram_command = 'hadoop jar {0} {1} -input {2} -output {3} -mapper "python voxel_mapper.py {4}" -reducer "python voxel_count_reducer.py" -file voxel_mapper.py -file voxel_count_reducer.py'.format(hadoop_jar, hadoop_streaming_args, input_file, output_folder, args_for_mapper)
 
     #create histogram
     subprocess.call(histogram_command, shell=True)
-
-    #TODO:Remove the following or provide option to keep the updated input file
-    #delete temporate filename file
-    if hdfs_file:
-        client.delete(filename_file)
-    else:
-        subprocess.call('rm {0}'.format(filename_file.replace('file://', '')), shell=True)
-
 
 if __name__ == "__main__": main()

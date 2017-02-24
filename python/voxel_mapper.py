@@ -16,29 +16,23 @@ def mapper(bin_size, data_max, data_min):
             line = line.strip()
             line = line.split()
             slice_file = os.path.join(line[0])
-
-            #if image is located in hdfs of not (ie stored locally)
-            hdfs_file = True if line[1] == "True" else False
-            #if image is gzipped or not
-            gzip_file = True if line[2] == "True" else False
             slice = None
 
-            #load nifti image from hdfs
-            if hdfs_file:
+            #open nifti image
+            if not os.path.exists(slice_file):
+                
                 
                 client = Config().get_client()
                 
                 with client.read(slice_file) as reader:
                     
                     #temporary non-recommended solution to determining if file is compressed.   
-                    if gzip_file:
+                    if 'gz' in slice_file[-2:]:
                         fh = FileHolder(fileobj=GzipFile(fileobj=BytesIO(reader.read())))
                     else:
                         fh = FileHolder(fileobj=BytesIO(reader.read()))
 
                     slice = Nifti1Image.from_file_map({'header': fh, 'image': fh})
-
-            #load image from local filesystem
             else:
                 slice = nib.load(slice_file)
             
