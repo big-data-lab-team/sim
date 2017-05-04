@@ -1,0 +1,413 @@
+import nibabel as nib
+from math import ceil
+import magic
+from gzip import GzipFile
+from io import BytesIO
+import sys
+import numpy as np
+from time import time
+#from fadvise import posix_fadvise, POSIX_FADV_DONTNEED
+#import gc
+
+class ImageUtils:
+    """ Helper utility class for performing operations on images"""
+
+    def __init__(self, filepath, utils = None):
+        #utils is for class HDFSutils        
+        #TODO: Review. not sure about these instance variables...    
+    
+        self.utils = utils
+        self.filepath = filepath
+        self.proxy = self.load_image(filepath)
+        self.affine = self.proxy.header.get_best_affine()
+        self.extension = filepath[-4:]
+        self.header_size = 352           
+
+    def split(self, x_length, y_length, z_length, local_dir, filename_prefix, hdfs_dir=None, copy_to_hdfs=False):
+        """Splits the 3d-image into shapes of given dimensions
+
+        Keyword arguments:
+        x_length, y_length and z_length : the desired x, y and z dimensions of the splits. 
+        local_dir                       : the path to the local directory in which the images will be saved
+        filename_prefix                 : the filename prefix
+        hdfs_dir                        : the hdfs directory name should the image be copied to hdfs. If none is provided and
+                                          copy_to_hdfs is set to True, the images will be copied to the HDFSUtils class' default
+                                          folder
+        copy_to_hdfs                    : boolean value indicating if the split images should be copied to HDFS. Default is False.
+        
+
+        """
+
+        num_x_iters = int(ceil(self.proxy.dataobj.shape[0]/x_length))
+        num_y_iters = int(ceil(self.proxy.dataobj.shape[1]/y_length))
+        num_z_iters = int(ceil(self.proxy.dataobj.shape[2]/z_length))
+        
+
+        remainder_x = self.proxy.dataobj.shape[0] % x_length
+        remainder_y = self.proxy.dataobj.shape[1] % y_length
+        remainder_z = self.proxy.dataobj.shape[2] % z_length        
+
+        is_rem_x = is_rem_y = is_rem_z = False
+
+        for x in range(0, num_x_iters):
+
+            if x == num_x_iters - 1 and remainder_x != 0: 
+                x_length = remainder_x
+                is_rem_x = True
+
+            for y in range(0, num_y_iters):
+
+                if y == num_y_iters - 1 and remainder_y != 0:
+                    y_length = remainder_y
+                    is_rem_y = True
+
+                for z in range(0, num_z_iters):
+
+                    if z == num_z_iters - 1 and remainder_z != 0:
+                        z_length = remainder_z
+                        is_rem_z = True
+
+                    x_start = x*x_length
+                    x_end = (x+1)*x_length
+
+                    y_start = y*y_length
+                    y_end = (y+1)*y_length
+
+                    z_start = z*z_length
+                    z_end = (z+1)*z_length
+
+                    split_array = self.proxy.dataobj[x_start:x_end, y_start:y_end, z_start:z_end]
+                    split_image = nib.Nifti1Image(split_array, self.proxy.header.get_best_affine())
+       
+                    imagepath = None
+                    
+                    #TODO: fix this so that position saved in image and not in filename
+                    #if the remaining number of voxels does not match the requested number of voxels, save the image with
+                    #with the given filename prefix and the suffix: _<x starting coordinate>_<y starting coordinate>_<z starting coordinate>__rem-<x lenght>-<y-length>-<z length>
+                    if is_rem_x or is_rem_y or is_rem_z:
+                        imagepath = '{0}/{1}_{2}_{3}_{4}__rem-{5}-{6}-{7}.nii.gz'.format(local_dir, filename_prefix, x_start, y_start, z_start, x_length, y_length, z_length) 
+                    else:
+                        imagepath = '{0}/{1}_{2}_{3}_{4}.nii.gz'.format(local_dir, filename_prefix, x_start, y_start, z_start)
+                    
+                    nib.save(split_image, imagepath)
+
+                    if copy_to_hdfs:
+                        self.utils.copy_to_hdfs(imagepath, ovrwrt=True, save_path_to_file=True)
+                    else:
+                        with open('{0}/legend.txt'.format(local_dir), 'a+') as im_legend:
+                            im_legend.write('{0}\n'.format(imagepath))
+
+                    is_rem_z = False
+        
+            is_rem_y = False
+
+    def cp_block_block(self, legend):
+        """ Reconstructs and image given a set of blocks. Filenames of blocks must contain their positioning in 3d in the reconstructed image (will work for slices too as long as filenames are configured properly...could remove cp_slice_slice then)
+
+        Keyword arguments:
+        legend                        : a legend containing the location of the blocks to use for reconstruction.
+
+
+        """
+
+        
+        rec_header = self.proxy.header
+        bytes_per_voxel = rec_header['bitpix']/8 
+        
+        print bytes_per_voxel
+        rec_dims = self.proxy.header.get_data_shape()
+     
+        y_size = rec_dims[0]
+        z_size = rec_dims[1]
+        x_size = rec_dims[2]
+
+        print self.filepath
+        with open(self.filepath, "r+b") as reconstructed:
+            with open(legend, "r") as legend:
+                prev_b_end = (0, 0, 0)
+                for block_name in legend:
+
+                    block_name = block_name.strip()
+                    
+                    print "Writing block: {0}".format(block_name)
+                    
+                    block = nib.load(block_name)
+                
+
+                    shape = block.header.get_data_shape()
+                    shape_y = shape[0]
+                    shape_z = shape[1]
+                    shape_x = shape[2]
+                    print shape
+
+                    block_pos = block_name[:-4].split('_')
+
+                    block_y = int(block_pos[-3])
+                    block_z = int(block_pos[-2])
+                    block_x = int(block_pos[-1].split('.')[0]) #temp solution to removing extension 
+                    block_data = block.get_data(caching='unchanged')
+                    
+                    t=time()
+                    max_seek = 0
+                    max_write = 0
+                    avg_seek = 0
+                    avg_write = 0
+                    min_seek = 1000
+                    min_write = 1000
+                    std_seek = 0
+                    std_write = 0
+    
+                    seek_times = []
+                    write_times = []
+
+                    step_x = 1
+                    step_z = 1
+
+                    start_x = 0
+                    start_z = 0
+
+                    end_x = shape_x
+                    end_z = shape_z
+                    
+                    print "Write starting at position: ({0}, {1}, {2})".format(block_y, block_z + start_z , block_x + start_x)
+
+                    for i in range(start_x, end_x, step_x):
+                        for j in range(start_z, end_z, step_z):
+                            seek_start = time()
+                            reconstructed.seek(self.header_size + bytes_per_voxel*(block_y + (block_z + j)*y_size +(block_x + i)*y_size*z_size), 0)
+                            seek_end = time() - seek_start
+                            write_start = time()
+                            reconstructed.write(block_data[:,j, i].tobytes())
+                            write_end = time() - write_start
+
+                            avg_seek += seek_end
+                            avg_write += write_end 
+
+                            seek_times.append(seek_end)
+                            write_times.append(write_end)
+
+                            if seek_end > max_seek:
+                                max_seek = seek_end
+                            if write_end > max_write:
+                                max_write = write_end
+                            if seek_end < min_seek:
+                                min_seek = seek_end
+                            if write_end < max_write:
+                                min_write = write_end
+
+
+                    print time()-t
+                    
+                    avg_seek = avg_seek / (shape_x * shape_z)
+                    avg_write = avg_write / (shape_x * shape_z)
+                    
+                    print "Maximum seek time: {0}\t Maximum write time: {1}".format(max_seek, max_write)
+                    print "Minimum seek time: {0}\t Minimum write time: {1}".format(min_seek, min_write)
+                    print "Average seek time: {0}\t Average write time: {1}".format(avg_seek, avg_write)
+                    print "Std seek: {0}\t Std write: {1}".format(np.std(seek_times), np.std(write_times))
+
+                    if end_x == -1:
+                        end_x = 0
+                    if end_z == -1:
+                        end_z = 0
+                    prev_b_end = (block_y + shape[0], block_z + end_z, block_x + end_x)
+                    print "End position of write: {0}".format(prev_b_end)
+
+    #def cp_block_slice(self, block_size, legend):
+        #with open(self.filepath, "r+b") as reconstructed:
+            #with open(legend, "r") as legend:
+                #TODO
+
+
+    def cp_slice_slice(self, legend):
+        """ Reconstructs and image given a set of slices.
+
+        Keyword arguments:
+        legend                          : a legend containing the location of the blocks to use for reconstruction.
+
+
+        """
+
+        with open(self.filepath, "r+b") as reconstructed:
+            reconstructed.seek(self.header_size, 0)
+            with open(legend, "r") as legend:
+                for slice_name in legend:
+                    
+                    if slice_name == "" or slice_name == None:
+                        continue                
+
+                    slice_name = slice_name.strip()
+                    print "Writing slice: {0}".format(slice_name)
+ 
+                    slice_im = nib.load(slice_name)
+
+                    reconstructed.write(slice_im.dataobj[:, :, 0].tobytes('F'))
+
+
+    def load_image(self, filepath, in_hdfs = None):
+        
+        """Load image into nibabel
+
+
+        Keyword arguments:
+        filepath                        : The absolute, relative path, or HDFS URL of the image
+                                          **Note: If in_hdfs parameter is not set and file is located in HDFS, it is necessary that the path provided is
+                                                an HDFS URL or an absolute/relative path with the '_HDFSUTILS_FLAG_' flag as prefix, or else it will
+                                                conclude that file is located in local filesystem.
+        in_hdfs                         : boolean variable indicating if image is located in HDFS or local filesystem. By default is set to None.
+                                          If not set (i.e. None), the function will attempt to determine where the file is located.   
+
+        """    
+   
+        if self.utils is None:
+            in_hdfs = False 
+        elif in_hdfs is None:
+            in_hdfs = self.utils.is_hdfs_uri(filepath)
+
+        if in_hdfs:
+            fh = None
+            #gets hdfs path in the case an hdfs uri was provided
+            filepath = self.utils.hdfs_path(filepath)
+
+            with self.utils.client.read(filepath) as reader:
+                stream = reader.read()
+                if self.is_gzipped(filepath, stream[:2]):
+                    fh = nib.FileHolder(fileobj=GzipFile(fileobj=BytesIO(stream)))
+                else:
+                    fh = nib.FileHolder(fileobj=BytesIO(stream))
+                
+                if is_nifti(filename):
+                    return nib.Nifti1Image.from_file_map({'header':fh, 'image':fh})
+                if is_minc(filename):
+                    return nib.Minc1Image.from_file_map({'header':fh, 'image':fh})
+                else:
+                    print('Error: currently unsupported file-format')
+                    sys.exit(1)
+
+        #image is located in local filesystem
+        return nib.load(filepath)
+
+    def is_gzipped(self, filepath, buff=None):
+        
+        """Determine if image is gzipped
+
+
+        Keyword arguments:
+        filepath                        : the absolute or relative filepath to the image
+        buffer                          : the bystream buffer. By default the value is None. If the image is located on HDFS,
+                                          it is necessary to provide a buffer, otherwise, the program will terminate.
+        """
+        mime = magic.Magic(mime=True)
+        try:
+            if buff is None:
+                if 'gzip' in mime.from_file(filepath):
+                    return True
+                return False
+            else:
+                if 'gzip' in mime.from_buffer(buff):
+                    return True
+                return False
+        except:
+            print('ERROR occured while attempting to determine if file is gzipped')
+            sys.exit(1)
+
+    def is_nifti(self):
+        if '.nii' in self.extension:
+            return True
+        return False
+
+
+    def is_minc(self):
+        if '.mnc' in self.extension:
+            return True
+        return False
+
+    
+def get_bytes_per_voxel(dtype):
+    if dtype == 'uint8':
+        bytes_per_voxel = np.dtype(uint8).itemsize
+    elif dtype == 'uint16':
+        bytes_per_voxel = np.dtype(uint16).itemsize
+    elif dtype == 'uint32':               
+        bytes_per_voxel = np.dtype(uint32).itemsize
+    elif dtype == 'uint64':               
+        bytes_per_voxel = np.dtype(uint64).itemsize
+    elif dtype == 'ushort':
+        bytes_per_voxel = np.dtype(ushort).itemsize
+    elif dtype == 'int8':               
+        bytes_per_voxel = np.dtype(int8).itemsize
+    elif dtype == 'int16':  
+        bytes_per_voxel = np.dtype(int16).itemsize
+    elif dtype == 'int32':  
+        bytes_per_voxel = np.dtype(int32).itemsize
+    elif dtype == 'int64':  
+        bytes_per_voxel = np.dtype(int64).itemsize
+    elif dtype == 'float32':  
+        bytes_per_voxel = np.dtype(float32).itemsize
+    elif dtype == 'float64':
+        bytes_per_voxel = np.dtype(float64).itemsize
+    else:
+        print 'Error: data type {0} not currently supported'.format(dtype)
+        sys.exit(1)
+
+def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype):
+    """ Function that generates a zero-filled NIFTI-1 image.
+
+    Keyword arguments:
+
+    output_filename               : the filename of the resulting output file
+    first_dim                     : the first dimension's (x?) size
+    second_dim                    : the second dimension's (y?) size
+    third_dim                     : the third dimension's (z?) size
+    dtye                          : the Numpy datatype of the resulting image
+
+
+    """
+    header = nib.Nifti1Header()
+
+    with open(output_filename, 'wb') as output:
+        header['dim'][0] = 3
+        header['dim'][1] = first_dim
+        header['dim'][2] = second_dim
+        header['dim'][3]= third_dim
+        header.set_data_dtype(dtype)
+        header.write_to(output)
+
+        slice = np.zeros((first_dim,second_dim), dtype=dtype)
+        
+        for x in range(0, third_dim):
+            output.write(slice.tobytes())
+
+class Legend:
+
+    def __init__(self, filename, is_img):
+        self.nib = is_img
+        self.pos = 0
+
+        try:
+            if not is_img:
+                self.contents = open(filename, 'r')
+            else:
+                self.contents = nib.load(filename).get_data().flatten()
+        except:
+            print "ERROR: Legend is not a text file or a nibabel-supported image"
+
+
+    def __enter__(self):
+        return self
+
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if not self.nib:
+            self.contents.close()
+
+
+    def get_next_block():
+        if not self.nib:
+            return self.contents.readline()
+        else:
+            self.pos += 1
+            return self.contents[self.pos - 1]
+             
+        
+                         
