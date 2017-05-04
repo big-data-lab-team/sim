@@ -2,7 +2,7 @@
 import sys
 import os
 from hdfsutils import HDFSUtils
-
+from imageutils import ImageUtils
 #get largest and smallest possible float
 max = sys.float_info.min
 min = sys.float_info.max
@@ -15,7 +15,7 @@ for line in sys.stdin:
     util = HDFSUtils()
 
     #load nifti image into nibabel
-    slice = util.load_nifti(slice_file)
+    slice = ImageUtils(slice_file, util).proxy
 
     data = slice.get_data().flat
 

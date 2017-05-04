@@ -20,7 +20,7 @@ def main():
     parser.add_argument("--num_mappers", help="The number of mappers to be used", type=int)
 
     parser.add_argument("-o", "--output", help="The output folder", type=str, default="HistogramOutput")
-    
+    #parser.add_argument("-split", help=) 
     required = parser.add_argument_group('required arguments')
     required.add_argument("-i", "--input_file", help="The input file", type=str, required=True)
     required.add_argument("-hj", "--hadoop_streaming_jar", help="The hadoop streaming jar", required=True)
