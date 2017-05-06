@@ -212,6 +212,70 @@ class ImageUtils:
                     #    end_z = 0
                     #prev_b_end = (block_y + shape[0], block_z + end_z, block_x + end_x)
                     #print "End position of write: {0}".format(prev_b_end)
+    
+    #will only work if the amount of blocks that fit in memory represents a rectangular prism
+    def cp_block_slice(self, legend, mem):
+        with open(self.filepath, "r+b") as reconstructed:
+
+            rec_dims = self.proxy.header.get_data_shape()
+
+            y_size = rec_dims[0]
+            z_size = rec_dims[1]
+            x_size = rec_dims[2]
+
+            with open(legend, "r") as legend:
+
+                remaining_mem = mem
+                data = None
+                for block_name in legend:
+                    
+                    block_name = block_name.strip()
+                    print "Reading block {0}".format(block_name)
+
+                    block_pos = block_name[:-4].split('_')
+                    start_x = 0
+                    start_z = 0
+                    start_y = 0
+
+                    #we will start our (partial) slice at these block coordinates
+                    if remaining_mem == mem:
+                        start_x = int(block_pos[-1].split('.')[0])
+                        start_z = int(block_pos[-2])
+                        start_y = int(block_pos[-3])
+                        
+                    block = nib.load(block_name)
+                    block_shape = block.header.get_data_shape()
+                    bytes_per_voxel = self.proxy.header['bitpix']/8
+                    block_bytes = 352 + bytes_per_voxel*(block_shape[0]*block_shape[1]*block_shape[2]) + 4
+                    
+                    if data is None:
+                        data = block.get_data()
+                    else:
+                        data = np.concatenate((data,block.get_data()))
+                    remaining_mem = remaining_mem - (block_bytes)
+
+                    #cannot load another block into memory, must write slice...assumes blocks will be of the same size
+                    if remaining_mem / block_bytes < 1:
+                        print "Remaining memory:{0}".format(remaining_mem)
+    
+                        end_x = int(block_pos[-1].split('.')[0]) + block_shape[2]
+                        end_z = int(block_pos[-2]) + block_shape[1]
+                        end_y = int(block_pos[-3]) + block_shape[0]
+
+                        print "Writing data starting at ({0}, {1}, {2}) and ending at ({3}, {4}, {5})".format(start_y, start_z, start_x, end_y, end_z, end_x)
+                        for i in range(0, block_shape[2]):
+                            seek_start = time()
+                            reconstructed.seek(self.header_size + bytes_per_voxel*(start_y + (start_z)*y_size +(start_x + i)*y_size*z_size), 0)
+                            print "Seek time for slice of  depth {0}: {1}".format(i, time()-seek_start)
+                            write_start = time()
+                            reconstructed.write(data[start_y:end_y,start_z:end_z,i].tobytes('F'))
+                            print "Write time for slice of  depth {0}: {1}".format(i, time()-write_start)
+                        
+
+                        remaining_mem = mem
+                        data = None
+
+
 
 
     #TODO: Fix function so that it will work in HDFS
@@ -238,7 +302,9 @@ class ImageUtils:
  
                     slice_im = nib.load(slice_name).get_data()[:,:,0].tobytes('F')
 
+                    write_start = time()
                     reconstructed.write(slice_im)
+                    print "Write time for slice: {0}".format(time()-write_start)
 
 
     def load_image(self, filepath, in_hdfs = None):
