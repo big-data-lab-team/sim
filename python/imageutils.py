@@ -23,11 +23,11 @@ class ImageUtils:
         self.extension = filepath[-4:]
         self.header_size = 352           
 
-    def split(self, x_length, y_length, z_length, local_dir, filename_prefix, hdfs_dir=None, copy_to_hdfs=False):
+    def split(self, first_dim, second_dim, third_dim, local_dir, filename_prefix, hdfs_dir=None, copy_to_hdfs=False):
         """Splits the 3d-image into shapes of given dimensions
 
         Keyword arguments:
-        x_length, y_length and z_length : the desired x, y and z dimensions of the splits. 
+        first_dim, second_dim, third_dim: the desired first, second and third dimensions of the splits, respectively. 
         local_dir                       : the path to the local directory in which the images will be saved
         filename_prefix                 : the filename prefix
         hdfs_dir                        : the hdfs directory name should the image be copied to hdfs. If none is provided and
@@ -38,45 +38,45 @@ class ImageUtils:
 
         """
 
-        num_x_iters = int(ceil(self.proxy.dataobj.shape[0]/x_length))
-        num_y_iters = int(ceil(self.proxy.dataobj.shape[1]/y_length))
-        num_z_iters = int(ceil(self.proxy.dataobj.shape[2]/z_length))
+        num_x_iters = int(ceil(self.proxy.dataobj.shape[2]/third_dim))
+        num_z_iters = int(ceil(self.proxy.dataobj.shape[1]/second_dim))
+        num_y_iters = int(ceil(self.proxy.dataobj.shape[0]/first_dim))
         
 
-        remainder_x = self.proxy.dataobj.shape[0] % x_length
-        remainder_y = self.proxy.dataobj.shape[1] % y_length
-        remainder_z = self.proxy.dataobj.shape[2] % z_length        
+        remainder_x = self.proxy.dataobj.shape[2] % third_dim
+        remainder_z = self.proxy.dataobj.shape[1] % second_dim
+        remainder_y = self.proxy.dataobj.shape[0] % first_dim        
 
         is_rem_x = is_rem_y = is_rem_z = False
 
         for x in range(0, num_x_iters):
 
             if x == num_x_iters - 1 and remainder_x != 0: 
-                x_length = remainder_x
+                third_dim = remainder_x
                 is_rem_x = True
 
-            for y in range(0, num_y_iters):
+            for z in range(0, num_z_iters):
 
-                if y == num_y_iters - 1 and remainder_y != 0:
-                    y_length = remainder_y
-                    is_rem_y = True
+                if z == num_z_iters - 1 and remainder_z != 0:
+                    second_dim = remainder_z
+                    is_rem_z = True
 
-                for z in range(0, num_z_iters):
+                for y in range(0, num_y_iters):
 
-                    if z == num_z_iters - 1 and remainder_z != 0:
-                        z_length = remainder_z
-                        is_rem_z = True
+                    if y == num_y_iters - 1 and remainder_y != 0:
+                        first_dim = remainder_y
+                        is_rem_y = True
 
-                    x_start = x*x_length
-                    x_end = (x+1)*x_length
+                    x_start = x*third_dim
+                    x_end = (x+1)*third_dim
 
-                    y_start = y*y_length
-                    y_end = (y+1)*y_length
+                    z_start = z*second_dim
+                    z_end = (z+1)*second_dim
 
-                    z_start = z*z_length
-                    z_end = (z+1)*z_length
+                    y_start = y*first_dim
+                    y_end = (y+1)*first_dim
 
-                    split_array = self.proxy.dataobj[x_start:x_end, y_start:y_end, z_start:z_end]
+                    split_array = self.proxy.dataobj[y_start:y_end, z_start:z_end, x_start:x_end]
                     split_image = nib.Nifti1Image(split_array, self.proxy.header.get_best_affine())
        
                     imagepath = None
@@ -85,9 +85,9 @@ class ImageUtils:
                     #if the remaining number of voxels does not match the requested number of voxels, save the image with
                     #with the given filename prefix and the suffix: _<x starting coordinate>_<y starting coordinate>_<z starting coordinate>__rem-<x lenght>-<y-length>-<z length>
                     if is_rem_x or is_rem_y or is_rem_z:
-                        imagepath = '{0}/{1}_{2}_{3}_{4}__rem-{5}-{6}-{7}.nii.gz'.format(local_dir, filename_prefix, x_start, y_start, z_start, x_length, y_length, z_length) 
+                        imagepath = '{0}/{1}_{2}_{3}_{4}__rem-{5}-{6}-{7}.nii.gz'.format(local_dir, filename_prefix, y_start, z_start, x_start, y_length, z_length, x_length) 
                     else:
-                        imagepath = '{0}/{1}_{2}_{3}_{4}.nii.gz'.format(local_dir, filename_prefix, x_start, y_start, z_start)
+                        imagepath = '{0}/{1}_{2}_{3}_{4}.nii.gz'.format(local_dir, filename_prefix, y_start, z_start, x_start)
                     
                     nib.save(split_image, imagepath)
 
@@ -101,8 +101,10 @@ class ImageUtils:
         
             is_rem_y = False
 
+    #TODO: Fix function so that it will work in HDFS
     def cp_block_block(self, legend):
-        """ Reconstructs and image given a set of blocks. Filenames of blocks must contain their positioning in 3d in the reconstructed image (will work for slices too as long as filenames are configured properly...could remove cp_slice_slice then)
+        """ Reconstructs and image given a set of blocks. Filenames of blocks must contain their positioning in 3d in the reconstructed image
+        (will work for slices too as long as filenames are configured properly)
 
         Keyword arguments:
         legend                        : a legend containing the location of the blocks to use for reconstruction.
@@ -114,16 +116,15 @@ class ImageUtils:
         rec_header = self.proxy.header
         bytes_per_voxel = rec_header['bitpix']/8 
         
-        print bytes_per_voxel
         rec_dims = self.proxy.header.get_data_shape()
      
         y_size = rec_dims[0]
         z_size = rec_dims[1]
         x_size = rec_dims[2]
 
-        print self.filepath
+        #print self.filepath
         with open(self.filepath, "r+b") as reconstructed:
-            with open(legend, "r") as legend:
+            with open(legend, 'r')  as legend:
                 prev_b_end = (0, 0, 0)
                 for block_name in legend:
 
@@ -138,7 +139,6 @@ class ImageUtils:
                     shape_y = shape[0]
                     shape_z = shape[1]
                     shape_x = shape[2]
-                    print shape
 
                     block_pos = block_name[:-4].split('_')
 
@@ -169,7 +169,7 @@ class ImageUtils:
                     end_x = shape_x
                     end_z = shape_z
                     
-                    print "Write starting at position: ({0}, {1}, {2})".format(block_y, block_z + start_z , block_x + start_x)
+                    #print "Write starting at position: ({0}, {1}, {2})".format(block_y, block_z + start_z , block_x + start_x)
 
                     for i in range(start_x, end_x, step_x):
                         for j in range(start_z, end_z, step_z):
@@ -196,29 +196,25 @@ class ImageUtils:
                                 min_write = write_end
 
 
-                    print time()-t
+                    #print time()-t
                     
-                    avg_seek = avg_seek / (shape_x * shape_z)
-                    avg_write = avg_write / (shape_x * shape_z)
+                    #avg_seek = avg_seek / (shape_x * shape_z)
+                    #avg_write = avg_write / (shape_x * shape_z)
                     
-                    print "Maximum seek time: {0}\t Maximum write time: {1}".format(max_seek, max_write)
-                    print "Minimum seek time: {0}\t Minimum write time: {1}".format(min_seek, min_write)
-                    print "Average seek time: {0}\t Average write time: {1}".format(avg_seek, avg_write)
-                    print "Std seek: {0}\t Std write: {1}".format(np.std(seek_times), np.std(write_times))
+                    #print "Maximum seek time: {0}\t Maximum write time: {1}".format(max_seek, max_write)
+                    #print "Minimum seek time: {0}\t Minimum write time: {1}".format(min_seek, min_write)
+                    #print "Average seek time: {0}\t Average write time: {1}".format(avg_seek, avg_write)
+                    #print "Std seek: {0}\t Std write: {1}".format(np.std(seek_times), np.std(write_times))
 
-                    if end_x == -1:
-                        end_x = 0
-                    if end_z == -1:
-                        end_z = 0
-                    prev_b_end = (block_y + shape[0], block_z + end_z, block_x + end_x)
-                    print "End position of write: {0}".format(prev_b_end)
-
-    #def cp_block_slice(self, block_size, legend):
-        #with open(self.filepath, "r+b") as reconstructed:
-            #with open(legend, "r") as legend:
-                #TODO
+                    #if end_x == -1:
+                    #    end_x = 0
+                    #if end_z == -1:
+                    #    end_z = 0
+                    #prev_b_end = (block_y + shape[0], block_z + end_z, block_x + end_x)
+                    #print "End position of write: {0}".format(prev_b_end)
 
 
+    #TODO: Fix function so that it will work in HDFS
     def cp_slice_slice(self, legend):
         """ Reconstructs and image given a set of slices.
 
@@ -228,6 +224,7 @@ class ImageUtils:
 
         """
 
+        #NOTE: nibabel has data_to_fileobj() function in spatialimages.py that does the same it seems
         with open(self.filepath, "r+b") as reconstructed:
             reconstructed.seek(self.header_size, 0)
             with open(legend, "r") as legend:
@@ -239,9 +236,9 @@ class ImageUtils:
                     slice_name = slice_name.strip()
                     print "Writing slice: {0}".format(slice_name)
  
-                    slice_im = nib.load(slice_name)
+                    slice_im = nib.load(slice_name).get_data()[:,:,0].tobytes('F')
 
-                    reconstructed.write(slice_im.dataobj[:, :, 0].tobytes('F'))
+                    reconstructed.write(slice_im)
 
 
     def load_image(self, filepath, in_hdfs = None):
@@ -365,6 +362,7 @@ def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype
     """
     header = nib.Nifti1Header()
 
+    #TODO: Fix header so that header information is accurate once data is filled
     with open(output_filename, 'wb') as output:
         header['dim'][0] = 3
         header['dim'][1] = first_dim
@@ -378,12 +376,16 @@ def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype
         for x in range(0, third_dim):
             output.write(slice.tobytes())
 
+
+
+#TODO:Not yet fully implemented
 class Legend:
 
     def __init__(self, filename, is_img):
         self.nib = is_img
         self.pos = 0
 
+        #Not even sure that this can or should be done
         try:
             if not is_img:
                 self.contents = open(filename, 'r')
@@ -407,7 +409,7 @@ class Legend:
             return self.contents.readline()
         else:
             self.pos += 1
-            return self.contents[self.pos - 1]
+            return str(int(self.contents[self.pos - 1])).zfill(4)
              
         
                          
