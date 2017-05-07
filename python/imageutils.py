@@ -102,7 +102,7 @@ class ImageUtils:
             is_rem_y = False
 
     #TODO: Fix function so that it will work in HDFS
-    def cp_block_block(self, legend):
+    def reconstruct_block_block(self, legend):
         """ Reconstructs and image given a set of blocks. Filenames of blocks must contain their positioning in 3d in the reconstructed image
         (will work for slices too as long as filenames are configured properly)
 
@@ -213,8 +213,15 @@ class ImageUtils:
                     #prev_b_end = (block_y + shape[0], block_z + end_z, block_x + end_x)
                     #print "End position of write: {0}".format(prev_b_end)
     
-    #will only work if the amount of blocks that fit in memory represents a rectangular prism
-    def cp_block_slice(self, legend, mem):
+    def reconstruct_block_slice(self, legend, mem):
+        """ Reconstruct an image given a set of blocks and amount of available memory such that it can load subset of blocks into memory for faster processing.
+            Assumes all blocks are of the same dimensions. 
+
+        Keyword arguments:
+        legend                 : Legend containing the URIs of the blocks. Blocks should be ordered in the way they should be written (i.e. along first dimension, 
+                                 then second, then third)
+        mem                    : Amount of available memory in bytes
+        """
         with open(self.filepath, "r+b") as reconstructed:
 
             rec_dims = self.proxy.header.get_data_shape()
@@ -223,19 +230,22 @@ class ImageUtils:
             z_size = rec_dims[1]
             x_size = rec_dims[2]
 
+            print y_size, z_size, x_size
+
             with open(legend, "r") as legend:
 
                 remaining_mem = mem
                 data = None
+                start_x = 0
+                start_z = 0
+                start_y = 0
+
                 for block_name in legend:
                     
                     block_name = block_name.strip()
                     print "Reading block {0}".format(block_name)
 
                     block_pos = block_name[:-4].split('_')
-                    start_x = 0
-                    start_z = 0
-                    start_y = 0
 
                     #we will start our (partial) slice at these block coordinates
                     if remaining_mem == mem:
@@ -254,7 +264,7 @@ class ImageUtils:
                         data = np.concatenate((data,block.get_data()))
                     remaining_mem = remaining_mem - (block_bytes)
 
-                    #cannot load another block into memory, must write slice...assumes blocks will be of the same size
+                    #cannot load another block into memory, must write slice
                     if remaining_mem / block_bytes < 1:
                         print "Remaining memory:{0}".format(remaining_mem)
     
@@ -266,20 +276,19 @@ class ImageUtils:
                         for i in range(0, block_shape[2]):
                             seek_start = time()
                             reconstructed.seek(self.header_size + bytes_per_voxel*(start_y + (start_z)*y_size +(start_x + i)*y_size*z_size), 0)
-                            print "Seek time for slice of  depth {0}: {1}".format(i, time()-seek_start)
+                            print "Seek time for slice of  depth {0}: {1}".format(start_x + i, time()-seek_start)
                             write_start = time()
-                            reconstructed.write(data[start_y:end_y,start_z:end_z,i].tobytes('F'))
-                            print "Write time for slice of  depth {0}: {1}".format(i, time()-write_start)
+                            reconstructed.write(data[:,:,i].tobytes('F'))
+                            print "Write time for slice of  depth {0}: {1}".format(start_x + i, time()-write_start)
                         
-
                         remaining_mem = mem
                         data = None
-
+                        
 
 
 
     #TODO: Fix function so that it will work in HDFS
-    def cp_slice_slice(self, legend):
+    def reconstruct_slice_slice(self, legend):
         """ Reconstructs and image given a set of slices.
 
         Keyword arguments:
@@ -294,7 +303,7 @@ class ImageUtils:
             with open(legend, "r") as legend:
                 for slice_name in legend:
                     
-                    if slice_name == "" or slice_name == None:
+                    if slice_name == "" or slice_name is None:
                         continue                
 
                     slice_name = slice_name.strip()
