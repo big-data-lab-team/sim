@@ -106,9 +106,10 @@ class ImageUtils:
         (will work for slices too as long as filenames are configured properly)
 
         Keyword arguments:
-        legend                        : a legend containing the location of the blocks to use for reconstruction.
+        legend                        : a legend containing the location of the blocks located within the local filesystem to use for reconstruction
+                                        ex. path/to/block_x_y_z.ext or /path/to/block_x_y_z.ext
 
-
+        NOTE: currently only supports nifti blocks as it uses 'bitpix' to determine number of bytes per voxel. Element is specific to nifti headers
         """
 
         
@@ -220,6 +221,8 @@ class ImageUtils:
         legend                 : Legend containing the URIs of the blocks. Blocks should be ordered in the way they should be written (i.e. along first dimension, 
                                  then second, then third)
         mem                    : Amount of available memory in bytes
+
+        NOTE: currently only supports nifti blocks as it uses 'bitpix' to determine number of bytes per voxel. Element is specific to nifti headers
         """
         with open(self.filepath, "r+b") as reconstructed:
 
@@ -294,6 +297,8 @@ class ImageUtils:
         Keyword arguments:
         legend                          : a legend containing the location of the blocks to use for reconstruction.
         mem                             : the amount of available memory in bytes in the system. If None is specified, only one slice will be loaded into memory at a time
+
+        NOTE: currently only supports nifti slices as it uses 'bitpix' to determine number of bytes per voxel. Element is specific to nifti headers
 
         """
 
@@ -429,33 +434,19 @@ def split_ext(filepath):
 
     return root, ext_1
 
-    
-def get_bytes_per_voxel(dtype):
-    if dtype == 'uint8':
-        bytes_per_voxel = np.dtype(uint8).itemsize
-    elif dtype == 'uint16':
-        bytes_per_voxel = np.dtype(uint16).itemsize
-    elif dtype == 'uint32':               
-        bytes_per_voxel = np.dtype(uint32).itemsize
-    elif dtype == 'uint64':               
-        bytes_per_voxel = np.dtype(uint64).itemsize
-    elif dtype == 'ushort':
-        bytes_per_voxel = np.dtype(ushort).itemsize
-    elif dtype == 'int8':               
-        bytes_per_voxel = np.dtype(int8).itemsize
-    elif dtype == 'int16':  
-        bytes_per_voxel = np.dtype(int16).itemsize
-    elif dtype == 'int32':  
-        bytes_per_voxel = np.dtype(int32).itemsize
-    elif dtype == 'int64':  
-        bytes_per_voxel = np.dtype(int64).itemsize
-    elif dtype == 'float32':  
-        bytes_per_voxel = np.dtype(float32).itemsize
-    elif dtype == 'float64':
-        bytes_per_voxel = np.dtype(float64).itemsize
-    else:
-        print 'Error: data type {0} not currently supported'.format(dtype)
-        sys.exit(1)
+
+get_bytes_per_voxel = { 'uint8' : np.dtype(uint8).itemsize,
+                        'uint16' : np.dtype(uint16).itemsize,
+                        'uint32' : np.dtype(uint32).itemsize,
+                        'ushort' : np.dtype(ushort).itemsize,
+                        'int8' : np.dtype(int8).itemsize,
+                        'int16' : np.dtype(int16).itemsize,
+                        'int32' : np.dtype(int32).itemsize,
+                        'int64' : np.dtype(int64).itemsize,
+                        'float32': np.dtype(float32).itemsize,
+                        'float64' : np.dtype(float64).itemsize
+}
+                        
 
 def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype, mem = None):
     """ Function that generates a zero-filled NIFTI-1 image.
