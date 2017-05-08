@@ -1,10 +1,12 @@
 from hdfs import Config
 import sys
 import posixpath
+import os
 
 class HDFSUtils:
     """Helper class for hdfs-related operations"""
-   
+  
+    #hdfs_flag used in the instance that an absolute or relative path is provided and file is located in HDFS
     hdfs_flag = '_HDFSUTILS_FLAG_ '
     default_txt_file = 'filepaths.txt'
  
@@ -26,6 +28,8 @@ class HDFSUtils:
         return False
 
     #checks if path is either an hdfs uri or contains the hdfs_flag
+    #if it's an hdfs uri, it will begin with hdfs:// or contain the _HDFS_UTILS_FLAG_
+    #ex. hdfs://localhost:9000/path/to/file or _HDFS_UTILS_FLAG_path/to/file
     def in_hdfs(self, path):
         if self.is_hdfs_uri(path):
             return True
@@ -59,12 +63,12 @@ class HDFSUtils:
 
     #copy file to hdfs
     #set ovrwrt to True if directory already exists and you wish all files to be replaced
-    #a custom hdfs path or url for where to save the splits can be provided. If not provided, the files will be saved in the folder self.default_dir.
+    #a custom hdfs path or url for where to save the splits can be provided. If not provided, the files will be saved in the folder self.hdfs_dir.
     #will save hdfs paths to file called filepaths.txt in hdfs_dir if save_path_to_file is set to True
     def copy_to_hdfs(self, local_filepath, hdfs_dir=None, ovrwrt=False, save_path_to_file=False):
         try:
             if hdfs_dir is None:
-                hdfs_dir = self.default_dir
+                hdfs_dir = self.hdfs_dir
                 self.client.makedirs(hdfs_dir)
             
             #in case of hdfs uri    
@@ -88,19 +92,19 @@ class HDFSUtils:
             print('Error: Unable to copy files to HDFS\n', e)
             sys.exit(1)
 
-    #delete directory in hdfs dir given an hdfs url or path. If no url/path is provided self.default_dir will be deleted
+    #delete directory in hdfs dir given an hdfs url or path. If no url/path is provided self.hdfs_dir will be deleted
     def delete_dir_hdfs(self, hdfs_dir=None, recursive=False):
         if hdfs_dir is None:
-            hdfs_dir = self.default_dir
+            hdfs_dir = self.hdfs_dir
         else:
             hdfs_dir = self.hdfs_path(hdfs_dir)
 
         return self.client.delete(hdfs_dir, recursive=recursive)
 
-    #will delete file at specified location. If no filepath is provided, it will attempt to deleted the default_txt_file located inside self.default_dir
+    #will delete file at specified location. If no filepath is provided, it will attempt to deleted the default_txt_file located inside self.hdfs_dir
     def delete_file_hdfs(self, filepath=None):
         if filepath is None:
-            filepath = self.default_dir + default_text_file
+            filepath = os.path.join(self.hdfs_dir, default_text_file)
 
         return self.client.delete(filepath)
         
