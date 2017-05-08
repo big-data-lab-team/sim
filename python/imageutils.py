@@ -6,8 +6,7 @@ from io import BytesIO
 import sys
 import numpy as np
 from time import time
-#from fadvise import posix_fadvise, POSIX_FADV_DONTNEED
-#import gc
+import os
 
 class ImageUtils:
     """ Helper utility class for performing operations on images"""
@@ -20,8 +19,8 @@ class ImageUtils:
         self.filepath = filepath
         self.proxy = self.load_image(filepath)
         self.affine = self.proxy.header.get_best_affine()
-        self.extension = filepath[-4:]
-        self.header_size = 352           
+        self.extension = split_ext(filepath)[1]
+        self.header_size = self.proxy.header.single_vox_offset          
 
     def split(self, first_dim, second_dim, third_dim, local_dir, filename_prefix, hdfs_dir=None, copy_to_hdfs=False):
         """Splits the 3d-image into shapes of given dimensions
@@ -77,7 +76,7 @@ class ImageUtils:
                     y_end = (y+1)*first_dim
 
                     split_array = self.proxy.dataobj[y_start:y_end, z_start:z_end, x_start:x_end]
-                    split_image = nib.Nifti1Image(split_array, self.proxy.header.get_best_affine())
+                    split_image = nib.Nifti1Image(split_array, self.affine)
        
                     imagepath = None
                     
@@ -140,11 +139,11 @@ class ImageUtils:
                     shape_z = shape[1]
                     shape_x = shape[2]
 
-                    block_pos = block_name[:-4].split('_')
+                    block_pos = split_ext(block_name)[0].split('_')
 
                     block_y = int(block_pos[-3])
                     block_z = int(block_pos[-2])
-                    block_x = int(block_pos[-1].split('.')[0]) #temp solution to removing extension 
+                    block_x = int(block_pos[-1])
                     block_data = block.get_data(caching='unchanged')
                     
                     t=time()
@@ -230,6 +229,8 @@ class ImageUtils:
             z_size = rec_dims[1]
             x_size = rec_dims[2]
 
+            bytes_per_voxel = self.proxy.header['bitpix']/8
+
             print y_size, z_size, x_size
 
             with open(legend, "r") as legend:
@@ -244,19 +245,18 @@ class ImageUtils:
                     
                     block_name = block_name.strip()
                     print "Reading block {0}".format(block_name)
-
-                    block_pos = block_name[:-4].split('_')
+                    block_pos = split_ext(block_name)[0].split('_')
 
                     #we will start our (partial) slice at these block coordinates
                     if remaining_mem == mem:
-                        start_x = int(block_pos[-1].split('.')[0])
+                        start_x = int(block_pos[-1])
                         start_z = int(block_pos[-2])
                         start_y = int(block_pos[-3])
                         
                     block = nib.load(block_name)
                     block_shape = block.header.get_data_shape()
-                    bytes_per_voxel = self.proxy.header['bitpix']/8
-                    block_bytes = 352 + bytes_per_voxel*(block_shape[0]*block_shape[1]*block_shape[2]) + 4
+                    bytes_per_voxel_block = block.header['bitpix']/8
+                    block_bytes = block.header.single_vox_offset + bytes_per_voxel_block*(block_shape[0]*block_shape[1]*block_shape[2])
                     
                     if data is None:
                         data = block.get_data()
@@ -268,7 +268,7 @@ class ImageUtils:
                     if remaining_mem / block_bytes < 1:
                         print "Remaining memory:{0}".format(remaining_mem)
     
-                        end_x = int(block_pos[-1].split('.')[0]) + block_shape[2]
+                        end_x = int(block_pos[-1]) + block_shape[2]
                         end_z = int(block_pos[-2]) + block_shape[1]
                         end_y = int(block_pos[-3]) + block_shape[0]
 
@@ -288,12 +288,12 @@ class ImageUtils:
 
 
     #TODO: Fix function so that it will work in HDFS
-    def reconstruct_slice_slice(self, legend):
+    def reconstruct_slice_slice(self, legend, mem=None):
         """ Reconstructs and image given a set of slices.
 
         Keyword arguments:
         legend                          : a legend containing the location of the blocks to use for reconstruction.
-
+        mem                             : the amount of available memory in bytes in the system. If None is specified, only one slice will be loaded into memory at a time
 
         """
 
@@ -301,19 +301,38 @@ class ImageUtils:
         with open(self.filepath, "r+b") as reconstructed:
             reconstructed.seek(self.header_size, 0)
             with open(legend, "r") as legend:
+
+                remaining_mem = mem
+                data = None                
+
                 for slice_name in legend:
                     
                     if slice_name == "" or slice_name is None:
                         continue                
 
                     slice_name = slice_name.strip()
-                    print "Writing slice: {0}".format(slice_name)
- 
-                    slice_im = nib.load(slice_name).get_data()[:,:,0].tobytes('F')
+                    print "Loading slice: {0}".format(slice_name)
+                    
+                    slice_img = self.load_image(slice_name)
+                    slice_shape = slice_img.header.get_data_shape()
+                    slice_bytes = slice_img.header.single_vox_offset + slice_img.header['bitpix']/8 * (slice_shape[0] * slice_shape[1] * slice_shape[2])
 
-                    write_start = time()
-                    reconstructed.write(slice_im)
-                    print "Write time for slice: {0}".format(time()-write_start)
+ 
+                    if data is None:
+                        data = slice_img.get_data()[...]
+                    else:
+                        data = np.concatenate((data, slice_img.get_data()[...]), axis = 2)    
+                    
+                    if remaining_mem is not None:
+                        remaining_mem = remaining_mem - slice_bytes
+
+                    if remaining_mem is None or remaining_mem / slice_bytes < 1:
+                        write_start = time()
+                        reconstructed.write(data.tobytes('F'))
+                        print "Write time for slices: {0}".format(time()-write_start)
+            
+                        data = None
+                        remaining_mem = mem
 
 
     def load_image(self, filepath, in_hdfs = None):
@@ -348,9 +367,9 @@ class ImageUtils:
                 else:
                     fh = nib.FileHolder(fileobj=BytesIO(stream))
                 
-                if is_nifti(filename):
+                if is_nifti(filepath):
                     return nib.Nifti1Image.from_file_map({'header':fh, 'image':fh})
-                if is_minc(filename):
+                if is_minc(filepath):
                     return nib.Minc1Image.from_file_map({'header':fh, 'image':fh})
                 else:
                     print('Error: currently unsupported file-format')
@@ -359,40 +378,56 @@ class ImageUtils:
         #image is located in local filesystem
         return nib.load(filepath)
 
-    def is_gzipped(self, filepath, buff=None):
-        
-        """Determine if image is gzipped
+def is_gzipped(filepath, buff=None):
+    
+    """Determine if image is gzipped
 
 
-        Keyword arguments:
-        filepath                        : the absolute or relative filepath to the image
-        buffer                          : the bystream buffer. By default the value is None. If the image is located on HDFS,
-                                          it is necessary to provide a buffer, otherwise, the program will terminate.
-        """
-        mime = magic.Magic(mime=True)
-        try:
-            if buff is None:
-                if 'gzip' in mime.from_file(filepath):
-                    return True
-                return False
-            else:
-                if 'gzip' in mime.from_buffer(buff):
-                    return True
-                return False
-        except:
-            print('ERROR occured while attempting to determine if file is gzipped')
-            sys.exit(1)
+    Keyword arguments:
+    filepath                        : the absolute or relative filepath to the image
+    buffer                          : the bystream buffer. By default the value is None. If the image is located on HDFS,
+                                      it is necessary to provide a buffer, otherwise, the program will terminate.
+    """
+    mime = magic.Magic(mime=True)
+    try:
+        if buff is None:
+            if 'gzip' in mime.from_file(filepath):
+                return True
+            return False
+        else:
+            if 'gzip' in mime.from_buffer(buff):
+                return True
+            return False
+    except:
+        print('ERROR occured while attempting to determine if file is gzipped')
+        sys.exit(1)
 
-    def is_nifti(self):
-        if '.nii' in self.extension:
-            return True
-        return False
+def is_nifti(fp):
+    ext = split_ext(fp)[1]
+    if '.nii' in ext:
+        return True
+    return False
 
 
-    def is_minc(self):
-        if '.mnc' in self.extension:
-            return True
-        return False
+def is_minc(fp):
+    ext = split_ext(fp)[1]
+    if '.mnc' in ext:
+        return True
+    return False
+
+def split_ext(filepath):
+    #assumes that if '.mnc' of '.nii' not in gzipped file extension, all extensions have been removed
+    root, ext = os.path.splitext(filepath)
+    ext_1 = ext.lower()
+    if '.gz' in ext_1:
+        root, ext = os.path.splitext(root)
+        ext_2 = ext.lower()
+        if '.mnc' in ext_2 or '.nii' in ext_2:
+            return root, "".join((ext_1, ext_2))
+        else:
+            return "".join((root, ext)), ext_1
+
+    return root, ext_1
 
     
 def get_bytes_per_voxel(dtype):
@@ -422,7 +457,7 @@ def get_bytes_per_voxel(dtype):
         print 'Error: data type {0} not currently supported'.format(dtype)
         sys.exit(1)
 
-def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype):
+def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype, mem = None):
     """ Function that generates a zero-filled NIFTI-1 image.
 
     Keyword arguments:
@@ -432,6 +467,7 @@ def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype
     second_dim                    : the second dimension's (y?) size
     third_dim                     : the third dimension's (z?) size
     dtye                          : the Numpy datatype of the resulting image
+    mem                           : the amount of available memory. By default it will only write one slice of zero-valued voxels at a time
 
 
     """
@@ -446,10 +482,26 @@ def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype
         header.set_data_dtype(dtype)
         header.write_to(output)
 
-        slice = np.zeros((first_dim,second_dim), dtype=dtype)
+        bytes_per_voxel = header['bitpix']/8
+            
+        slice_bytes = bytes_per_voxel * (first_dim * second_dim)
+
+        slice_third_dim = 1
+        slice_remainder = 0
+
+        if mem is not None:
+            slice_third_dim = mem / slice_bytes
+            slice_remainder = (bytes_per_voxel * (first_dim * second_dim * third_dim)) % (slice_bytes * slice_third_dim)
+            print slice_remainder
         
-        for x in range(0, third_dim):
-            output.write(slice.tobytes())
+        slice_arr = np.zeros((first_dim,second_dim, slice_third_dim), dtype=dtype)
+        
+        print "Filling image..."           
+        for x in range(0, third_dim/slice_third_dim):
+            output.write(slice_arr.tobytes('F'))
+
+        if slice_remainder != 0:
+            output.write(np.zeros((first_dim, second_dim, slice_third_dim), dtype=dtype).tobytes('F'))
 
 
 
