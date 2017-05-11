@@ -7,20 +7,29 @@ import sys
 import numpy as np
 from time import time
 import os
+import logging
 
 class ImageUtils:
     """ Helper utility class for performing operations on images"""
 
-    def __init__(self, filepath, utils = None):
+    def __init__(self, filepath, first_dim = None, second_dim = None, third_dim = None, dtype = None, utils = None):
         #utils is for class HDFSutils        
         #TODO: Review. not sure about these instance variables...    
     
         self.utils = utils
         self.filepath = filepath
         self.proxy = self.load_image(filepath)
-        self.affine = self.proxy.header.get_best_affine()
         self.extension = split_ext(filepath)[1]
-        self.header_size = self.proxy.header.single_vox_offset          
+
+        self.header = None    
+
+        if self.proxy:
+            self.header = self.proxy.header
+        else:
+            self.header = generate_header(first_dim, second_dim, third_dim, dtype)
+
+        self.affine = self.header.get_best_affine()
+        self.header_size = self.header.single_vox_offset
 
     def split(self, first_dim, second_dim, third_dim, local_dir, filename_prefix, hdfs_dir=None, copy_to_hdfs=False):
         """Splits the 3d-image into shapes of given dimensions
@@ -36,6 +45,12 @@ class ImageUtils:
         
 
         """
+        try:
+            if self.proxy is None:
+                raise AttributeError( "Cannot split an image that has not yet been created.")
+        except AttributeError as aerr:
+            print 'AttributeError: ', aerr 
+            sys.exit(1)
 
         num_x_iters = int(ceil(self.proxy.dataobj.shape[2]/third_dim))
         num_z_iters = int(ceil(self.proxy.dataobj.shape[1]/second_dim))
@@ -111,19 +126,20 @@ class ImageUtils:
 
         NOTE: currently only supports nifti blocks as it uses 'bitpix' to determine number of bytes per voxel. Element is specific to nifti headers
         """
-
         
-        rec_header = self.proxy.header
-        bytes_per_voxel = rec_header['bitpix']/8 
-        
-        rec_dims = self.proxy.header.get_data_shape()
-     
-        y_size = rec_dims[0]
-        z_size = rec_dims[1]
-        x_size = rec_dims[2]
 
-        #print self.filepath
-        with open(self.filepath, "r+b") as reconstructed:
+        with open(self.filepath, self.file_access()) as reconstructed:
+
+            if self.proxy is None:
+                self.header.write_to(reconstructed)
+            
+            bytes_per_voxel = self.header['bitpix']/8 
+            rec_dims = self.header.get_data_shape()
+         
+            y_size = rec_dims[0]
+            z_size = rec_dims[1]
+            x_size = rec_dims[2]
+
             with open(legend, 'r')  as legend:
                 prev_b_end = (0, 0, 0)
                 for block_name in legend:
@@ -212,6 +228,8 @@ class ImageUtils:
                     #    end_z = 0
                     #prev_b_end = (block_y + shape[0], block_z + end_z, block_x + end_x)
                     #print "End position of write: {0}".format(prev_b_end)
+        if self.proxy is None:
+            self.proxy = self.load_image(self.filepath)
     
     def reconstruct_block_slice(self, legend, mem):
         """ Reconstruct an image given a set of blocks and amount of available memory such that it can load subset of blocks into memory for faster processing.
@@ -224,15 +242,19 @@ class ImageUtils:
 
         NOTE: currently only supports nifti blocks as it uses 'bitpix' to determine number of bytes per voxel. Element is specific to nifti headers
         """
-        with open(self.filepath, "r+b") as reconstructed:
+  
+        with open(self.filepath, self.file_access()) as reconstructed:
 
-            rec_dims = self.proxy.header.get_data_shape()
+            if self.proxy is None:
+                self.header.write_to(reconstructed)
+
+            rec_dims = self.header.get_data_shape()
 
             y_size = rec_dims[0]
             z_size = rec_dims[1]
             x_size = rec_dims[2]
 
-            bytes_per_voxel = self.proxy.header['bitpix']/8
+            bytes_per_voxel = self.header['bitpix']/8
 
             print y_size, z_size, x_size
 
@@ -286,7 +308,9 @@ class ImageUtils:
                         
                         remaining_mem = mem
                         data = None
-                        
+
+        if self.proxy is None:
+            self.proxy = self.load_image(self.filepath)
 
 
 
@@ -303,8 +327,13 @@ class ImageUtils:
         """
 
         #NOTE: nibabel has data_to_fileobj() function in spatialimages.py that does the same it seems
-        with open(self.filepath, "r+b") as reconstructed:
-            reconstructed.seek(self.header_size, 0)
+        with open(self.filepath, self.file_access()) as reconstructed:
+
+            if self.proxy is None:
+                self.header = self.header.write_to(reconstructed)
+            else:
+                reconstructed.seek(self.header_size, 0)
+
             with open(legend, "r") as legend:
 
                 remaining_mem = mem
@@ -339,6 +368,8 @@ class ImageUtils:
                         data = None
                         remaining_mem = mem
 
+        if self.proxy is None:
+            self.proxy = self.load_image(self.filepath)
 
     def load_image(self, filepath, in_hdfs = None):
         
@@ -377,11 +408,43 @@ class ImageUtils:
                 if is_minc(filepath):
                     return nib.Minc1Image.from_file_map({'header':fh, 'image':fh})
                 else:
-                    print('Error: currently unsupported file-format')
+                    print('ERROR: currently unsupported file-format')
                     sys.exit(1)
+        elif not os.path.isfile(filepath):
+            logging.warn("File does not exist in HDFS nor in Local FS. Will only be able to reconstruct image...")
+            return None
 
         #image is located in local filesystem
-        return nib.load(filepath)
+        try:
+            return nib.load(filepath)
+        except:
+            print "ERROR: Unable to load image into nibabel"
+            sys.exit(1)
+
+    def file_access(self):
+        
+        if self.proxy is None:
+            return "w+b"
+        return "r+b"
+
+def generate_header(first_dim, second_dim, third_dim, dtype):
+    #TODO: Fix header so that header information is accurate once data is filled
+    #Assumes file data is 3D
+
+    try:
+        header = nib.Nifti1Header()
+        header['dim'][0] = 3
+        header['dim'][1] = first_dim
+        header['dim'][2] = second_dim
+        header['dim'][3]= third_dim
+        header.set_data_dtype(dtype)
+
+        return header
+    
+    except:
+        print "ERROR: Unable to generate header. Please verify that the dimensions and datatype are valid."
+        sys.exit(1)
+        
 
 def is_gzipped(filepath, buff=None):
     
@@ -404,7 +467,7 @@ def is_gzipped(filepath, buff=None):
                 return True
             return False
     except:
-        print('ERROR occured while attempting to determine if file is gzipped')
+        print('ERROR: an error occured while attempting to determine if file is gzipped')
         sys.exit(1)
 
 def is_nifti(fp):
@@ -435,18 +498,19 @@ def split_ext(filepath):
     return root, ext_1
 
 
-get_bytes_per_voxel = { 'uint8' : np.dtype(uint8).itemsize,
-                        'uint16' : np.dtype(uint16).itemsize,
-                        'uint32' : np.dtype(uint32).itemsize,
-                        'ushort' : np.dtype(ushort).itemsize,
-                        'int8' : np.dtype(int8).itemsize,
-                        'int16' : np.dtype(int16).itemsize,
-                        'int32' : np.dtype(int32).itemsize,
-                        'int64' : np.dtype(int64).itemsize,
-                        'float32': np.dtype(float32).itemsize,
-                        'float64' : np.dtype(float64).itemsize
+get_bytes_per_voxel = { 'uint8' : np.dtype('uint8').itemsize,
+                        'uint16' : np.dtype('uint16').itemsize,
+                        'uint32' : np.dtype('uint32').itemsize,
+                        'ushort' : np.dtype('ushort').itemsize,
+                        'int8' : np.dtype('int8').itemsize,
+                        'int16' : np.dtype('int16').itemsize,
+                        'int32' : np.dtype('int32').itemsize,
+                        'int64' : np.dtype('int64').itemsize,
+                        'float32': np.dtype('float32').itemsize,
+                        'float64' : np.dtype('float64').itemsize
 }
-                        
+
+                    
 
 def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype, mem = None):
     """ Function that generates a zero-filled NIFTI-1 image.
@@ -462,16 +526,8 @@ def generate_zero_nifti(output_filename, first_dim, second_dim, third_dim, dtype
 
 
     """
-    header = nib.Nifti1Header()
-
-    #TODO: Fix header so that header information is accurate once data is filled
     with open(output_filename, 'wb') as output:
-        header['dim'][0] = 3
-        header['dim'][1] = first_dim
-        header['dim'][2] = second_dim
-        header['dim'][3]= third_dim
-        header.set_data_dtype(dtype)
-        header.write_to(output)
+        generate_header(output_fo, first_dim, second_dim, third_dim, dtype)
 
         bytes_per_voxel = header['bitpix']/8
             
