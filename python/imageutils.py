@@ -121,6 +121,11 @@ class ImageUtils:
                     #if the remaining number of voxels does not match the requested number of voxels, save the image with
                     #with the given filename prefix and the suffix: _<x starting coordinate>_<y starting coordinate>_<z starting coordinate>__rem-<x lenght>-<y-length>-<z length>
                     if is_rem_x or is_rem_y or is_rem_z:
+                        
+                        y_length = y_end - y_start
+                        z_length = z_end - z_start
+                        x_length = x_end - x_start
+
                         imagepath = '{0}/{1}_{2}_{3}_{4}__rem-{5}-{6}-{7}.nii.gz'.format(local_dir, filename_prefix, y_start, z_start, x_start, y_length, z_length, x_length) 
                     else:
                         imagepath = '{0}/{1}_{2}_{3}_{4}.nii.gz'.format(local_dir, filename_prefix, y_start, z_start, x_start)
