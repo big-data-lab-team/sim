@@ -12,8 +12,7 @@ from enum import Enum
 
 
 class Merge(Enum):
-    block_block = 0
-    splits = 1
+    clustered = 0
 
 class ImageUtils:
     """ Helper utility class for performing operations on images"""
@@ -46,8 +45,7 @@ class ImageUtils:
         self.header_size = self.header.single_vox_offset
 
     
-        self.merge_types = {Merge.block_block : self.reconstruct_block_block,
-                            Merge.splits : self.reconstruct_splits
+        self.merge_types = {Merge.clustered : self.clustered_read
         }
         
 
@@ -157,152 +155,22 @@ class ImageUtils:
 
             m_type = Merge[merge_func]
 
-            if m_type == Merge.block_block:
-                self.merge_types[m_type](reconstructed, legend)
-            else:
-                self.merge_types[m_type](reconstructed, legend, mem)
+            self.merge_types[m_type](reconstructed, legend, mem)
 
         if self.proxy is None:
             self.proxy = self.load_image(self.filepath)
 
 
-    #TODO: Fix function so that it will work in HDFS
-    def reconstruct_block_block(self, reconstructed, legend):
-        """ Reconstructs and image given a set of blocks. Filenames of blocks must contain their positioning in 3d in the reconstructed image
-        (will work for slices too as long as filenames are configured properly)
-
-        Keyword arguments:
-        reconstructed                 : the fileobject pointing to the to-be reconstructed image
-        legend                        : a legend containing the location of the blocks located within the local filesystem to use for reconstruction
-                                        ex. path/to/block_x_y_z.ext or /path/to/block_x_y_z.ext
-
-        NOTE: currently only supports nifti blocks as it uses 'bitpix' to determine number of bytes per voxel. Element is specific to nifti headers
-        """
-
-        bytes_per_voxel = self.header['bitpix']/8 
-        rec_dims = self.header.get_data_shape()
-     
-        y_size = rec_dims[0]
-        z_size = rec_dims[1]
-        x_size = rec_dims[2]
-
-        with open(legend, 'r')  as legend:
-            prev_b_end = (0, 0, 0)
-            for block_name in legend:
-
-                block_name = block_name.strip()
-                
-                #print "Writing block: {0}".format(block_name)
-                print block_name, ',',                
-
-                block = nib.load(block_name)
-            
-
-                shape = block.header.get_data_shape()
-                shape_y = shape[0]
-                shape_z = shape[1]
-                shape_x = shape[2]
-
-                block_pos = split_ext(block_name)[0].split('_')
-
-                block_y = int(block_pos[-3])
-                block_z = int(block_pos[-2])
-                block_x = int(block_pos[-1])
-
-                t=time()
-
-                read_start = time()
-                block_data = block.get_data(caching='unchanged')
-                read_end = time() - read_start
-                
-                print "Read:,{0},".format(read_end)                
-
-                max_seek = 0
-                max_write = 0
-                avg_seek = 0
-                avg_write = 0
-                min_seek = 1000
-                min_write = 1000
-                std_seek = 0
-                std_write = 0
-                total_seek = 0
-                total_write = 0
-
-                seek_times = []
-                write_times = []
-
-                step_x = 1
-                step_z = 1
-
-                start_x = 0
-                start_z = 0
-
-                end_x = shape_x
-                end_z = shape_z
-                
-                #print "Write starting at position: ({0}, {1}, {2})".format(block_y, block_z + start_z , block_x + start_x)
-
-                for i in range(start_x, end_x, step_x):
-                    for j in range(start_z, end_z, step_z):
-                    
-                        seek_start = time()
-                        reconstructed.seek(self.header_size + bytes_per_voxel*(block_y + (block_z + j)*y_size +(block_x + i)*y_size*z_size), 0)
-                        seek_end = time() - seek_start
-                        
-                        total_seek += seek_end
-                        #print "Seek:, {0},".format(seek_end),                        
-
-                        write_start = time()
-                        reconstructed.write(block_data[:,j, i].tobytes())
-                        write_end = time() - write_start
-
-                        total_write += write_end
-                    
-                        #print "Write:, {0},".format(write_end)
-
-                        avg_seek += seek_end
-                        avg_write += write_end 
-
-                        seek_times.append(seek_end)
-                        write_times.append(write_end)
-
-                        if seek_end > max_seek:
-                            max_seek = seek_end
-                        if write_end > max_write:
-                            max_write = write_end
-                        if seek_end < min_seek:
-                            min_seek = seek_end
-                        if write_end < max_write:
-                            min_write = write_end
-
-
-                print "Seek:,{0}, Write:,{1},".format(total_seek, total_write),
-                print "Total read/seek/write:,{0},".format(time()-t),
-                
-                #avg_seek = avg_seek / (shape_x * shape_z)
-                #avg_write = avg_write / (shape_x * shape_z)
-                
-                print "Maximum seek time:,{0},Maximum write time:,{1},".format(max_seek, max_write),
-                print "Minimum seek time:,{0},Minimum write time:,{1},".format(min_seek, min_write),
-                print "Average seek time:,{0},Average write time:,{1},".format(avg_seek, avg_write),
-                print "Std seek:,{0},Std write:,{1}".format(np.std(seek_times), np.std(write_times))
-
-                #if end_x == -1:
-                #    end_x = 0
-                #if end_z == -1:
-                #    end_z = 0
-                #prev_b_end = (block_y + shape[0], block_z + end_z, block_x + end_x)
-                #print "End position of write: {0}".format(prev_b_end)
-
-    def reconstruct_splits(self, reconstructed, legend, mem):
+    #TODO:make it work with HDFS
+    def clustered_read(self, reconstructed, legend, mem):
         """ Reconstruct an image given a set of splits and amount of available memory such that it can load subset of splits into memory for faster processing.
             Assumes all blocks are of the same dimensions. 
 
         Keyword arguments:
         reconstructed          : the fileobject pointing to the to-be reconstructed image
-        legend                 : legend containing the URIs of the blocks. Splits should be ordered in the way they should be written (i.e. along first dimension, 
-                                 then second, then third)
-        mem                    : Amount of available memory in bytes
+        legend                 : legend containing the URIs of the splits. Splits should be ordered in the way they should be written (i.e. along first dimension, 
+                                 then second, then third) for best performance
+        mem                    : Amount of available memory in bytes. If mem is None, it will only read one split at a time
 
         NOTE: currently only supports nifti blocks as it uses 'bitpix' to determine number of bytes per voxel. Element is specific to nifti headers
         """
@@ -317,6 +185,11 @@ class ImageUtils:
 
         print y_size, z_size, x_size
 
+        total_read = 0
+        total_seek = 0
+        total_defrag = 0
+        total_write = 0
+
         with open(legend, "r") as legend:
 
             remaining_mem = mem
@@ -330,21 +203,37 @@ class ImageUtils:
                 split_name = split_name.strip()
 
                 if unread_split is not None:
-                    unread_split, remaining_mem = insert_in_dict(data_dict, unread_split, remaining_mem, bytes_per_voxel, y_size, z_size)
+                    unread_split, remaining_mem, read_time = insert_in_dict(data_dict, unread_split, remaining_mem, bytes_per_voxel, y_size, z_size)
 
                 if unread_split is None:    
-                    unread_split, remaining_mem = insert_in_dict(data_dict, split_name, remaining_mem, bytes_per_voxel, y_size, z_size)
-
+                    unread_split, remaining_mem, read_time = insert_in_dict(data_dict, split_name, remaining_mem, bytes_per_voxel, y_size, z_size)
+                
+                total_read += read_time
 
                 #cannot load another block into memory, must write slice
                 if remaining_mem <= 0:
                     print "Remaining memory:{0}".format(remaining_mem)
 
-                    data_dict = write_to_file(data_dict, reconstructed, bytes_per_voxel)
+                    seek_time, defrag_time, write_time = write_to_file(data_dict, reconstructed, bytes_per_voxel)
+                    
+                    total_seek += seek_time
+                    total_defrag += defrag_time
+                    total_write += write_time
+                    
                     remaining_mem = mem
 
-            data_dict = write_to_file(data_dict, reconstructed, bytes_per_voxel)
+            #if there is a final chunk of data that remains to be copied
+            if len(data_dict) > 0:
+                seek_time, defrag_time, write_time = write_to_file(data_dict, reconstructed, bytes_per_voxel)
 
+                total_seek += seek_time
+                total_defrag += defrag_time
+                total_write += write_time
+
+        print "Total time spent reading: ", total_read
+        print "Total time spent seeking: ", total_seek
+        print "Total time spent defragmenting: ", total_defrag
+        print "Total time spent writing: ", total_write
 
     def load_image(self, filepath, in_hdfs = None):
         
@@ -405,14 +294,33 @@ class ImageUtils:
 
 def insert_in_dict(data_dict, split_name, remaining_mem, bytes_per_voxel, y_size, z_size):
 
+    """Insert contiguous chunks of data contained in splits as key-value pairs in dictionary where the key is the byte position
+       in the reconstructed image and the value is the flattened numpy array containing contiguous data
+
+    Keyword arguments:
+    data_dict                           : dictionary containing key-value pairs of contiguous memory chunks. Key is byte position in reconstructed image.
+    split_name                          : filename of split
+    remaining_mem                       : how much available memory remains to be used (bytes)
+    bytes_per_voxel                     : number of bytes in a voxel in the reconstructed image
+    y_size                              : first dimension size in reconstructed image
+    z_size                              : second dimension size in reconstructed image
+
+    """
+
     print "Reading split {0}".format(split_name)
     split_pos = split_ext(split_name)[0].split('_')
 
 
     split = nib.load(split_name)
     split_shape = split.header.get_data_shape()
+
+    # A bit useless for now, but will become important if the datatype of splits and the datatype of the reconstructed do not match
+    # in which we'll have to modify data type of data array (Not implemented yet)
     bytes_per_voxel_split = split.header['bitpix']/8
+
     split_bytes = split.header.single_vox_offset + bytes_per_voxel_split*(split_shape[0]*split_shape[1]*split_shape[2])
+
+    read_time = 0
 
     if remaining_mem is not None:
         remaining_mem = remaining_mem - (split_bytes)
@@ -427,19 +335,31 @@ def insert_in_dict(data_dict, split_name, remaining_mem, bytes_per_voxel, y_size
         else:
             for i in range(0, split_shape[2]):
                 for j in range(0, split_shape[1]):
-                    data_dict[split.header.single_vox_offset + bytes_per_voxel*(int(split_pos[-3]) + (int(split_pos[-2]) + j) * y_size + (int(split_pos[-1]) + i)*y_size*z_size)] = data[..., j, i].flatten('F')
+                    key = split.header.single_vox_offset + bytes_per_voxel*(int(split_pos[-3]) + (int(split_pos[-2]) + j) * y_size + (int(split_pos[-1]) + i)*y_size*z_size)
+                    data_dict[key] = data[..., j, i].flatten('F')
 
         read_time =  time() - read_s
         print "Read time: ", read_time
 
     else:
-        return split_name, remaining_mem
+        return split_name, remaining_mem, read_time
 
-    return None, remaining_mem
+    return None, remaining_mem, read_time
 
 def write_to_file(data_dict, reconstructed, bytes_per_voxel):
 
-    defrag_dict(data_dict, bytes_per_voxel)
+    """Write dictionary data to file
+
+    Keyword arguments:
+
+    data_dict                           : dictionary containing contiguous data chunks as key-value pairs (key is position in reconstructed in bytes)
+    reconstructed                       : file object pointing to the to-be reconstructed image
+    bytes_per_voxel                     : number of bytes contained in a voxel in the reconstructed image
+
+    """
+
+    #defragment data before writing to file
+    defrag_time = defrag_dict(data_dict, bytes_per_voxel)
 
     print len(data_dict)
 
@@ -452,18 +372,29 @@ def write_to_file(data_dict, reconstructed, bytes_per_voxel):
         reconstructed.seek(k, 0)
         seek_time += time() - seek_start
             
-        #print "Seek time for slice of byte position {0}: {1}".format(k, time()-seek_start)
         write_start = time()
         reconstructed.write(data_dict[k].tobytes('F'))
         write_time += time() - write_start
-        #print "Write time for slice of byte position {0}: {1}".format(k, time()-write_start)
+        
+        #can remove from dictionary
+        del data_dict[k]
 
     print "Seek time: ", seek_time
     print "Write time: ", write_time
-    return {}    
+
+    return seek_time, defrag_time, write_time
 
 def defrag_dict(data_dict, bytes_per_voxel):
-    #defragment dict
+    """ Defragment dictionary containing contiguous data as key-value pairs such that key-value pairs that remain do not contain any
+        data that is contiguous to another key-value pair.
+
+        Keyword arguments:
+
+        data_dict                               : dictionary containing contiguous data chunks as key-value pairs (key is position in reconstructed in bytes)
+        bytes_per_voxel                         : number of bytes in a voxel in the reconstructed image
+
+
+    """
 
     def_s = time()
     previous_k = None
@@ -478,8 +409,13 @@ def defrag_dict(data_dict, bytes_per_voxel):
             del data_dict[k]
         else:
             previous_k = k
+
+    defrag_time = time() - def_s
     print "Defragmentation time: ", time() - def_s
     print "Dictionary size after defragmentation: ", len(data_dict)
+
+    return defrag_time
+
 
 def generate_header(first_dim, second_dim, third_dim, dtype):
     #TODO: Fix header so that header information is accurate once data is filled
