@@ -197,7 +197,7 @@ class ImageUtils:
         with open(legend, "r") as legend:
 
             splits = legend.readlines()
-            eof = splits[-1]
+            eof = splits[-1].strip()
             remaining_mem = mem
             data_dict = {}
 
