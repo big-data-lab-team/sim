@@ -190,28 +190,34 @@ class ImageUtils:
         total_defrag = 0
         total_write = 0
 
+
+        #if a mem is inputted as 0, proceed with naive implementation (same as not inputting a value for mem)
+        mem = None if mem == 0 else mem
+
         with open(legend, "r") as legend:
 
+            splits = legend.readlines()
+            eof = splits[-1]
             remaining_mem = mem
             data_dict = {}
 
             unread_split = None
 
-            for split_name in legend:
-               
+            for split_name in splits:
+   
                 print "Remaining mem: ", remaining_mem 
                 split_name = split_name.strip()
 
                 if unread_split is not None:
-                    unread_split, remaining_mem, read_time = insert_in_dict(data_dict, unread_split, remaining_mem, bytes_per_voxel, y_size, z_size)
+                    unread_split, remaining_mem, read_time = insert_in_dict(data_dict, unread_split, remaining_mem, mem, bytes_per_voxel, y_size, z_size)
 
                 if unread_split is None:    
-                    unread_split, remaining_mem, read_time = insert_in_dict(data_dict, split_name, remaining_mem, bytes_per_voxel, y_size, z_size)
+                    unread_split, remaining_mem, read_time = insert_in_dict(data_dict, split_name, remaining_mem, mem, bytes_per_voxel, y_size, z_size)
                 
                 total_read += read_time
 
                 #cannot load another block into memory, must write slice
-                if remaining_mem <= 0:
+                if remaining_mem <= 0 or split_name == eof:
                     print "Remaining memory:{0}".format(remaining_mem)
 
                     seek_time, defrag_time, write_time = write_to_file(data_dict, reconstructed, bytes_per_voxel)
@@ -221,14 +227,6 @@ class ImageUtils:
                     total_write += write_time
                     
                     remaining_mem = mem
-
-            #if there is a final chunk of data that remains to be copied
-            if len(data_dict) > 0:
-                seek_time, defrag_time, write_time = write_to_file(data_dict, reconstructed, bytes_per_voxel)
-
-                total_seek += seek_time
-                total_defrag += defrag_time
-                total_write += write_time
 
         print "Total time spent reading: ", total_read
         print "Total time spent seeking: ", total_seek
@@ -292,7 +290,7 @@ class ImageUtils:
         return "r+b"
 
 
-def insert_in_dict(data_dict, split_name, remaining_mem, bytes_per_voxel, y_size, z_size):
+def insert_in_dict(data_dict, split_name, remaining_mem, mem,  bytes_per_voxel, y_size, z_size):
 
     """Insert contiguous chunks of data contained in splits as key-value pairs in dictionary where the key is the byte position
        in the reconstructed image and the value is the flattened numpy array containing contiguous data
@@ -301,9 +299,13 @@ def insert_in_dict(data_dict, split_name, remaining_mem, bytes_per_voxel, y_size
     data_dict                           : dictionary containing key-value pairs of contiguous memory chunks. Key is byte position in reconstructed image.
     split_name                          : filename of split
     remaining_mem                       : how much available memory remains to be used (bytes)
+    mem                                 : total amount of available memory
     bytes_per_voxel                     : number of bytes in a voxel in the reconstructed image
     y_size                              : first dimension size in reconstructed image
     z_size                              : second dimension size in reconstructed image
+
+    Returns None if the split was inserted into dictionary, and the split's filepath if it was not inserted due to lack of remaining memory. Throws an error
+    if there is an insufficient total amount of available memory
 
     """
 
@@ -314,22 +316,34 @@ def insert_in_dict(data_dict, split_name, remaining_mem, bytes_per_voxel, y_size
     split = nib.load(split_name)
     split_shape = split.header.get_data_shape()
 
+
     # A bit useless for now, but will become important if the datatype of splits and the datatype of the reconstructed do not match
     # in which we'll have to modify data type of data array (Not implemented yet)
     bytes_per_voxel_split = split.header['bitpix']/8
 
     split_bytes = split.header.single_vox_offset + bytes_per_voxel_split*(split_shape[0]*split_shape[1]*split_shape[2])
+    
+    try:
+        if split_bytes > mem:
+            raise IOError('Size of split ({0} bytes) is greater than total available memory ({1} bytes)'.format(split_bytes, mem))
+    except IOError as e:
+        print 'Error: ', e
+        sys.exit(1)
 
     read_time = 0
 
     if remaining_mem is not None:
         remaining_mem = remaining_mem - (split_bytes)
 
-    if remaining_mem >= 0 or remaining_mem is None:
+    #if the split cannot be read into memory, return split name such that it can be stored to be read during next clustered read iteration
+    if remaining_mem is not None and remaining_mem <= 0:
+        return split_name, remaining_mem, read_time
 
+    else:
         read_s = time()     
         data = split.get_data()
 
+        #if split is a slice, the entire array can be flattened as it is all contiguous memory. Otherwise, needs to be partitioned into contiguous chunks.
         if split_shape[0] == y_size and split_shape[1] == z_size:
             data_dict[split.header.single_vox_offset + bytes_per_voxel*(int(split_pos[-3]) + (int(split_pos[-2])) * y_size + (int(split_pos[-1]))*y_size*z_size)] = data.flatten('F')
         else:
@@ -340,9 +354,6 @@ def insert_in_dict(data_dict, split_name, remaining_mem, bytes_per_voxel, y_size
 
         read_time =  time() - read_s
         print "Read time: ", read_time
-
-    else:
-        return split_name, remaining_mem, read_time
 
     return None, remaining_mem, read_time
 
@@ -400,10 +411,7 @@ def defrag_dict(data_dict, bytes_per_voxel):
     previous_k = None
     print "Dictionary size: ", len(data_dict)
     for k in sorted(data_dict.keys()):
-        if previous_k is None:
-            previous_k = k
-            continue
-        if k == previous_k + (data_dict[previous_k].shape[0] * bytes_per_voxel):
+        if previous_k is not None and k == previous_k + (data_dict[previous_k].shape[0] * bytes_per_voxel):
             data_dict[previous_k].resize(len(data_dict[previous_k]) + len(data_dict[k]))
             data_dict[previous_k][-len(data_dict[k]):] = data_dict[k]
             del data_dict[k]
