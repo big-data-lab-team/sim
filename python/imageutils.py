@@ -9,7 +9,6 @@ from time import time
 import os
 import logging
 from enum import Enum
-from psutil import *
 
 class Merge(Enum):
     clustered = 0
@@ -233,73 +232,103 @@ class ImageUtils:
 
     def multiple_reads(self, reconstructed, legend, mem):
         """ Reconstruct an image given a set of splits and amount of available memory.
-        Multiple_reads: load splits servel times to read a complete slice
+        multiple_reads: load splits servel times to read a complete slice
         Currently it can work on random shape of splits and in unsorted order
         :param reconstructed: the fileobject pointing to the to-be reconstructed image
-        :param legend: containing the URIs of the splits. 
-        :param mem: amount of available memory in bytes. 
+        :param legend: containing the URIs of the splits.
+        :param mem: bytes to be written into the file
         """
-        # The basic idea is that calculate how much bytes it needs to write to a file based
-        # on mem parameter. Then filter all the position (offset) of tiles in that range and add them to data_dict
-        # After all the blocks have been read, write data_dict to file. And start next round...
-        # until the file has done writing.
-        # get original image infomation
-        rec_dims = self.header.get_data_shape()
-        y_size = rec_dims[0]
-        z_size = rec_dims[1]
-        x_size = rec_dims[2]
+        Y_size, Z_size, X_size = self.header.get_data_shape()
         bytes_per_voxel = self.header['bitpix'] / 8
-        img_size = self.header.single_vox_offset + bytes_per_voxel * (x_size * y_size * z_size)
-        print y_size, z_size, x_size
+        header_offset = self.header.single_vox_offset
+        reconstructed_img_voxels = X_size * Y_size * Z_size
 
-        total_read = 0
-        total_seek = 0
-        total_defrag = 0
-        total_write = 0
+        # for benchmarking
+        total_read_time = 0
+        total_seek_time = 0
+        total_write_time = 0
+        total_seek_number = 0
 
-        # if mem is not set, then use all the available memory for faster processing
-        mem = virtual_memory().available if mem is None else mem
+        # get how many voxels per round
+        voxels = mem / bytes_per_voxel
+        next_write_index = (0, voxels - 1)
 
-        # dictionary data structure to contain only "contiguous" data that will be written sequentially.
-        data_dict = {}
-        # offset that it is going to write in the file
-        next_write_range = (0, mem)
+        # read the headers of all the splits
+        # to filter the splits out of the write range
+        print "Get split reading state..."
+        split_reading_state = get_offsets_of_all_splits(legend, Y_size, Z_size)
+
+        print "Sort split names..."
+        sorted_split_name_list = sort_split_names(legend)
 
         # Core loop
         while True:
-            print("{} --> {}....".format(next_write_range[0], next_write_range[1]))
-            with open(legend, "r") as f:
-                for split_name in f:
-                    split_name = split_name.strip()
-                    start_read_time = time()
-                    # extract all the tiles whose postion is in the writing range and add them to data_dict.
-                    extract_tiles(data_dict, split_name, next_write_range, bytes_per_voxel, y_size, z_size)
-                    total_read += time() - start_read_time
+            # exclude header size
+            next_write_offsets = (next_write_index[0] * bytes_per_voxel, next_write_index[1] * bytes_per_voxel + 1)
+            print("From {} to {}...".format(next_write_offsets[0], next_write_offsets[1]))
+            # the real write offset(with header size)
+            write_offset = header_offset + next_write_offsets[0]
+            # pre-assign a numpy array to store the data that going to be written consistently
+            data_array = np.empty(shape=next_write_index[1] + 1 - next_write_index[0], dtype=self.header.get_data_dtype())
 
-            # It's time to write into the file.
-            seek_time, defrag_time, write_time = write_to_file(data_dict, reconstructed, bytes_per_voxel)
+            # for benchmarking
+            seek_number_one_r = 0
+            read_time_one_r = 0
+            start_read_time = time()
 
-            total_seek += seek_time
-            total_defrag += defrag_time
-            total_write += write_time
+            # Flag - check if already found the first split in range,
+            # if not, keep finding,
+            # if yes, break at the next "not found", as the split names are sorted
+            found_first_split_in_range = False
+            # iterate all the splits
+            for split_name in sorted_split_name_list:
+                # check if split is in the write range, if there is at least one voxel in the range, then read the split.
+                in_range = check_in_write_range(next_write_offsets, split_reading_state[split_name])
+                if in_range:
+                    found_first_split_in_range = True
+                    extract_rows(Split(split_name), data_array, next_write_index, Y_size, Z_size)
+                    seek_number_one_r += 1
+                elif not found_first_split_in_range:
+                    continue
+                else:
+                    # because splits are sorted
+                    break
 
-            # clear
-            data_dict = {}
-            # change "next write range" to start next round
-            next_write_range = (next_write_range[0] + mem, next_write_range[1] + mem)
+            # for benchmarking
+            read_time_one_r += time() - start_read_time
+            print "seek_number_one_r: ", seek_number_one_r
+            print "read_time_one_r: ", read_time_one_r
+            total_seek_number += seek_number_one_r
+            total_read_time += read_time_one_r
+
+            # It's time to write array into the file.
+            seek_time_w, write_time, seek_number_w = write_array_to_file(data_array, reconstructed, write_offset)
+
+            # for benchmarking
+            total_seek_time += seek_time_w
+            total_write_time += write_time
+            total_seek_number += seek_number_w
+
+            # clean and prepare next round
+            del data_array
+
+            next_write_index = (next_write_index[1] + 1, next_write_index[1] + voxels)
 
             #  last write, write no more than image size
-            if next_write_range[1] >= img_size:
-                next_write_range = (next_write_range[0], img_size)
+            if next_write_index[1] >= reconstructed_img_voxels:
+                next_write_index = (next_write_index[0], reconstructed_img_voxels - 1)
 
             # if write range is larger img size, we are done
-            if next_write_range[0] > img_size:
+            if next_write_index[0] >= reconstructed_img_voxels:
                 break
 
-        print "Total time spent reading: ", total_read
-        print "Total time spent seeking: ", total_seek
-        print "Total time spent defragmenting: ", total_defrag
-        print "Total time spent writing: ", total_write
+        # for benchmarking
+        print "************************************************"
+        print "Total time spent reading: ", total_read_time
+        print "Total time spent writing: ", total_write_time
+        print "Total time spent seeking: ", total_seek_time
+        print "Total seeking times: ", total_seek_number
+        print "************************************************"
 
     def load_image(self, filepath, in_hdfs=None):
 
@@ -354,25 +383,142 @@ class ImageUtils:
             return "w+b"
         return "r+b"
 
-def extract_tiles(data_dict, split_name, write_range, bytes_per_voxel, y_size, z_size):
-    # extract inforrmation from the split
-    split_pos = split_ext(split_name)[0].split('_')
-    split = nib.load(split_name)
-    split_header_size = split.header.single_vox_offset
-    (split_y, split_z, split_x) = split.header.get_data_shape()
-    split_data = split.get_data()
-    write_start = write_range[0]
-    write_end = write_range[1]
+class Split:
+    """
+    It contains all the info of one split
+    """
+    def __init__(self, split_name):
+        self.split_name = split_name
+        self._get_info_from(split_name)
 
-    for i in range(0, split_x):
-        for j in range(0, split_z):
+    def _get_info_from(self, split_name):
+        self.split_pos = split_ext(split_name)[0].split('_')
+        self.split_proxy = nib.load(split_name)
+        self.split_header_size = self.split_proxy.header.single_vox_offset
+        self.bytes_per_voxel = self.split_proxy.header['bitpix'] / 8
+        (self.split_y, self.split_z, self.split_x) = self.split_proxy.header.get_data_shape()
+        self.split_bytes = self.bytes_per_voxel * (self.split_y * self.split_x * self.split_z)
+
+def sort_split_names(legend):
+    """
+    sort all the split names read from legend file
+    output a sorted name list
+    """
+    split_position_list = []
+    sorted_split_names_list = []
+    split_name = ""
+    with open(legend, "r") as f:
+        for split_name in f:
+            split_name = split_name.strip()
+            split = Split(split_name)
+            split_position_list.append((int(split.split_pos[-3]), (int(split.split_pos[-2])),  (int(split.split_pos[-1]))))
+
+    # sort the last element first in the tuple
+    split_position_list = sorted(split_position_list, key=lambda t: t[::-1])
+    for position in split_position_list:
+        sorted_split_names_list.append(regenerate_split_name_from_position(split_name, position))
+    return sorted_split_names_list
+
+def regenerate_split_name_from_position(split_name, position):
+    filename_prefix = split_name.strip().split('/')[-1].split('_')[0]
+    filename_ext = split_name.strip().split(".", 1)[1]
+    blocks_dir = split_name.strip().rsplit('/', 1)[0]
+    split_name = blocks_dir + '/' + filename_prefix + "_" + str(position[0]) + "_" + str(position[1]) + "_" + str(position[2]) + "." + filename_ext
+    return  split_name
+
+def extract_rows(split, data_list, write_index, Y_size, Z_size):
+    """
+    extract_all the rows that in the write range, and write the data to a numpy array
+    """
+    write_start, write_end = write_index
+    split_data = split.split_proxy.get_data()
+
+    for i in range(0, split.split_x):
+        for j in range(0, split.split_z):
+
+            index_start = int(split.split_pos[-3]) + (int(split.split_pos[-2]) + j) * Y_size + (int(split.split_pos[-1]) + i) * Y_size * Z_size
+            index_end = index_start + split.split_y
+
+            # if split's one row is in the write range.
+            if index_start >= write_start and index_end <= write_end:
+                data = split_data[..., j, i]
+                data_list[index_start - write_start: index_end - write_start] = data
+
+            # if split's one row's start index is in the write range, but end index is outside of write range.
+            elif index_start <= write_end <= index_end:
+                data = split_data[: (write_end - index_start + 1), j, i]
+                data_list[index_start - write_start: ] = data
+
+            # if split's one row's end index is in the write range, but start index is outside of write range.
+            elif index_start <= write_start <= index_end:
+                data = split_data[write_start - index_start :, j, i]
+                data_list[: index_end - write_start] = data
+
+            # if not in the write range
+            else:
+                continue
+
+def get_offsets_of_all_splits(legend, Y_size, Z_size):
+    """
+    get writing offsets of all splits, add them to a dictionary
+    key-> split_name
+    value-> a writing offsets list
+    """
+    split_offsets = {}
+    with open(legend, "r") as f:
+        for split_name in f:
+            split_name = split_name.strip()
+            split = Split(split_name)
+            offset_list = get_offsets_of_split(split, Y_size, Z_size)
+            split_offsets[split.split_name] = offset_list
+    return split_offsets
+
+def get_offsets_of_split(split, Y_size, Z_size):
+    """
+    get all the writing offset in one split
+    """
+    offset_list = []
+    for i in range(0, split.split_x):
+        for j in range(0, split.split_z):
             # calculate the offset (in bytes) of each tile, add all the tiles in to data_dict that in the write range.
-            write_offset = split_header_size + bytes_per_voxel * (int(split_pos[-3]) + (int(split_pos[-2]) + j) * y_size + (int(split_pos[-1]) + i) * y_size * z_size)
-            if  write_start <= write_offset < write_end:
-                # key: offset in file; value: np array
-                data_dict[write_offset] = split_data[..., j, i].flatten('F')
-    # clear memory
-    split_data = None
+            write_offset = split.bytes_per_voxel * (int(split.split_pos[-3]) + (int(split.split_pos[-2]) + j) * Y_size +
+                                                                              (int(split.split_pos[-1]) + i) * Y_size * Z_size)
+            offset_list.append(write_offset)
+    return offset_list
+
+def check_in_write_range(next_write_offsets, offset_list):
+    """
+    check if at least one voxel in the split in the write range
+    """
+    for offset in offset_list:
+        if offset >= next_write_offsets[0] and offset <= next_write_offsets[1]:
+            return True
+    return False
+
+def write_array_to_file(data_array, reconstructed, write_offset):
+    """
+    :param data_array: consists of consistent data that to bo written to the file
+    :param reconstructed: reconstructed image file to be written 
+    :param write_offset: file offset to be written
+    :return: benchmarking params
+    """
+    seek_time = 0
+    write_time = 0
+    seek_number = 0
+
+    seek_start = time()
+    reconstructed.seek(write_offset, 0)
+    seek_number += 1
+    seek_time += time() - seek_start
+
+    write_start = time()
+    reconstructed.write(data_array.tobytes('F'))
+    write_time += time() - write_start
+
+    print "Seek time in writing: ", seek_time
+    print "Write time in writing: ", write_time
+    print "Seek number in writing: ", seek_number
+    return seek_time, write_time, seek_number
 
 def insert_in_dict(data_dict, split_name, remaining_mem, mem, bytes_per_voxel, y_size, z_size):
     """Insert contiguous chunks of data contained in splits as key-value pairs in dictionary where the key is the byte position
