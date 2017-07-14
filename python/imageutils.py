@@ -137,6 +137,109 @@ class ImageUtils:
 
             is_rem_y = False
 
+    def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain", extension="nii"):
+        """
+        Split the input image into several splits, all share with the same shape
+        For now only support .nii extension
+        :param Y_splits: How many splits in Y-axis
+        :param Z_splits: How many splits in Z-axis
+        :param X_splits: How many splits in X-axis
+        :param out_dir: Output Splits dir 
+        :param mem: memory load each round
+        :param filename_prefix: each split's prefix filename 
+        :param extension: extension of each split
+        :return: 
+        """
+        # calculate remainder based on the original image file
+        Y_size, Z_size, X_size = self.header.get_data_shape()
+        bytes_per_voxel = self.header['bitpix'] / 8
+        original_img_voxels = X_size * Y_size * Z_size
+
+        if X_size % X_splits != 0 or Z_size % Z_splits != 0 or Y_size % Y_splits != 0:
+            raise Exception("There is remainder after splitting, please reset the y,z,x splits")
+        x_size = X_size / X_splits
+        z_size = Z_size / Z_splits
+        y_size = Y_size / Y_splits
+
+        # for benchmarking
+        total_read_time = 0
+        total_seek_time = 0
+        total_write_time = 0
+        total_seek_number = 0
+
+        # get all split_names and write them to the legend file
+        split_names = generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, out_dir, filename_prefix, extension)
+        legend_file = generate_legend_file(split_names, "legend.txt", out_dir)
+        # generate all the headers for each split
+        generate_headers_of_splits(split_names, y_size, z_size, x_size, self.header.get_data_dtype())
+        # get all write offset of all split names
+        print "Get split offsets..."
+        split_offsets = get_offsets_of_all_splits(legend_file, Y_size, Z_size)
+        # drop the remainder which is less than one slice
+        # if mem is less than one slice, then set mem to one slice
+        mem = mem  - mem  % (Y_size * Z_size * bytes_per_voxel) \
+            if mem >= Y_size * Z_size * bytes_per_voxel \
+            else Y_size * Z_size * bytes_per_voxel
+
+        # get how many voxels per round
+        voxels = mem / bytes_per_voxel
+        next_read_index = (0, voxels - 1)
+
+        # Core Loop:
+        while True:
+            next_read_offsets = (next_read_index[0] * bytes_per_voxel, next_read_index[1] * bytes_per_voxel + 1)
+            print("From {} to {}".format(next_read_offsets[0], next_read_offsets[1]))
+            from_x_index = index_to_voxel(next_read_index[0], Y_size, Z_size)[2]
+            to_x_index = index_to_voxel(next_read_index[1] + 1, Y_size, Z_size)[2]
+
+            st_read_time = time()
+            data_in_range = self.proxy.dataobj[..., from_x_index: to_x_index]
+            total_read_time += time() - st_read_time
+            total_seek_number += 1
+
+            # iterate all splits to see if in the read range:
+            for split_name in split_names:
+                in_range = check_in_range(next_read_offsets, split_offsets[split_name])
+                if in_range:
+                    split = Split(split_name)
+                    # extract all the slices that in the read range
+                    # X_index: index that in original image's coordinate system
+                    # x_index: index that in the split's coordinate system
+                    (X_index_min, X_index_max, x_index_min, x_index_max) = extract_slices_range(split, next_read_index, Y_size, Z_size)
+                    write_offset = split.split_header_size + x_index_min * split.split_y * split.split_z * split.bytes_per_voxel
+                    with open(split_name, 'a+b') as split_img:
+                        # get y,z range of the original image that to be written
+                        y_index_min = int(split.split_pos[-3])
+                        z_index_min = int(split.split_pos[-2])
+                        y_index_max = y_index_min + split.split_y
+                        z_index_max = z_index_min + split.split_z
+                        # time to write to file
+                        # cut the proper size from the original image and write them (np array) to each split file
+                        seek_time, write_time, seek_number = write_array_to_file(data_in_range[y_index_min: y_index_max, z_index_min: z_index_max, X_index_min - from_x_index: X_index_max - from_x_index + 1]
+                                            .flatten('F'), split_img, write_offset)
+
+                        total_write_time += write_time
+                        total_seek_time += seek_time
+                        total_seek_number += seek_number
+            # update next read range..
+            next_read_index = (next_read_index[1] + 1, next_read_index[1] + voxels)
+            #  last write, write no more than image size
+            if next_read_index[1] >= original_img_voxels:
+                next_read_index = (next_read_index[0], original_img_voxels - 1)
+            # if write range is larger img size, we are done
+            if next_read_index[0] >= original_img_voxels:
+                break
+            # clear
+            del data_in_range
+
+        # for benchmarking
+        print "************************************************"
+        print "Total time spent reading: ", total_read_time
+        print "Total time spent writing: ", total_write_time
+        print "Total time spent seeking: ", total_seek_time
+        print "Total number of seeks:", total_seek_number
+        print "************************************************"
+
     def reconstruct_img(self, legend, merge_func, mem=None):
         """
 
@@ -255,8 +358,8 @@ class ImageUtils:
 
         # read the headers of all the splits
         # to filter the splits out of the write range
-        print "Get split reading state..."
-        split_reading_state = get_offsets_of_all_splits(legend, Y_size, Z_size)
+        print "Get split offsets..."
+        split_offsets = get_offsets_of_all_splits(legend, Y_size, Z_size)
 
         print "Sort split names..."
         sorted_split_name_list = sort_split_names(legend)
@@ -283,7 +386,7 @@ class ImageUtils:
             # iterate all the splits
             for split_name in sorted_split_name_list:
                 # check if split is in the write range, if there is at least one voxel in the range, then read the split.
-                in_range = check_in_write_range(next_write_offsets, split_reading_state[split_name])
+                in_range = check_in_range(next_write_offsets, split_offsets[split_name])
                 if in_range:
                     found_first_split_in_range = True
                     extract_rows(Split(split_name), data_array, next_write_index, Y_size, Z_size)
@@ -327,8 +430,9 @@ class ImageUtils:
         print "Total time spent reading: ", total_read_time
         print "Total time spent writing: ", total_write_time
         print "Total time spent seeking: ", total_seek_time
-        print "Total seeking times: ", total_seek_number
+        print "Total number of seeks: ", total_seek_number
         print "************************************************"
+
 
     def load_image(self, filepath, in_hdfs=None):
 
@@ -382,6 +486,72 @@ class ImageUtils:
         if self.proxy is None:
             return "w+b"
         return "r+b"
+
+def generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, out_dir, filename_prefix, extension):
+    """
+    generate all the splits' name based on the number of splits the user set
+    """
+    split_names = []
+    for x in range(0, X_size, x_size):
+        for z in range(0, Z_size, z_size):
+            for y in range(0, Y_size, y_size):
+                split_names.append(out_dir + '/' + filename_prefix + '_' + str(y) + "_" + str(z) + "_" + str(x) + "." + extension)
+    return split_names
+
+def generate_legend_file(split_names, legend_file_name, out_dir):
+    """
+    generate legend file for each all the splits
+    """
+    legend_file = '{0}/{1}'.format(out_dir, legend_file_name)
+    with open(legend_file, 'a+') as f:
+        for split_name in split_names:
+            f.write('{0}\n'.format(split_name))
+    return legend_file
+
+def generate_headers_of_splits(split_names, y_size, z_size, x_size, dtype):
+    """
+    generate headers of each splits based on the shape and dtype 
+    """
+    header = generate_header(y_size, z_size, x_size, dtype)
+    for split_name in split_names:
+        with open(split_name, 'w+b') as f:
+            header.write_to(f)
+
+def index_to_voxel(index, Y_size, Z_size):
+    """
+    index to voxel, eg. 0 -> (0,0,0).
+    """
+    i = index % (Y_size )
+    index = index / (Y_size)
+    j = index % (Z_size )
+    index = index / (Z_size )
+    k = index
+    return (i, j, k)
+
+def extract_slices_range(split, next_read_index, Y_size, Z_size):
+    """
+    extract all the slices of each split that in the read range.
+    X_index: index that in original image's coordinate system
+    x_index: index that in the split's coordinate system
+    """
+    indexes = []
+    x_index_min = -1
+    read_start, read_end = next_read_index
+    for i in range(0, split.split_x):
+        index = int(split.split_pos[-3]) + (int(split.split_pos[-2])) * Y_size + (int(split.split_pos[-1]) + i) * Y_size * Z_size
+        # if split's one row is in the write range.
+        if index >= read_start and index <= read_end:
+            if len(indexes) == 0:
+                x_index_min = i
+            indexes.append(index)
+        else:
+            continue
+
+    X_index_min = index_to_voxel(min(indexes), Y_size, Z_size)[2]
+    X_index_max = index_to_voxel(max(indexes), Y_size, Z_size)[2]
+    x_index_max = x_index_min + (X_index_max - X_index_min)
+
+    return (X_index_min, X_index_max, x_index_min, x_index_max)
 
 class Split:
     """
@@ -486,16 +656,16 @@ def get_offsets_of_split(split, Y_size, Z_size):
             offset_list.append(write_offset)
     return offset_list
 
-def check_in_write_range(next_write_offsets, offset_list):
+def check_in_range(next_offsets, offset_list):
     """
     check if at least one voxel in the split in the write range
     """
     for offset in offset_list:
-        if offset >= next_write_offsets[0] and offset <= next_write_offsets[1]:
+        if offset >= next_offsets[0] and offset <= next_offsets[1]:
             return True
     return False
 
-def write_array_to_file(data_array, reconstructed, write_offset):
+def write_array_to_file(data_array, to_file, write_offset):
     """
     :param data_array: consists of consistent data that to bo written to the file
     :param reconstructed: reconstructed image file to be written 
@@ -507,17 +677,14 @@ def write_array_to_file(data_array, reconstructed, write_offset):
     seek_number = 0
 
     seek_start = time()
-    reconstructed.seek(write_offset, 0)
+    to_file.seek(write_offset, 0)
     seek_number += 1
     seek_time += time() - seek_start
 
     write_start = time()
-    reconstructed.write(data_array.tobytes('F'))
+    to_file.write(data_array.tobytes('F'))
     write_time += time() - write_start
 
-    print "Seek time in writing: ", seek_time
-    print "Write time in writing: ", write_time
-    print "Seek number in writing: ", seek_number
     return seek_time, write_time, seek_number
 
 def insert_in_dict(data_dict, split_name, remaining_mem, mem, bytes_per_voxel, y_size, z_size):
