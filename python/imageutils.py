@@ -10,9 +10,16 @@ import os
 import logging
 from enum import Enum
 
+start_indexes = {}
+s_i_count = 0
 class Merge(Enum):
     clustered = 0
     multiple = 1
+
+class ClusteredWrites(Enum):
+    SLICES = "slices"
+    COMPLETE = "c_rows"
+    INCOMPLETE = "i_rows"
 
 class ImageUtils:
     """ Helper utility class for performing operations on images"""
@@ -32,6 +39,7 @@ class ImageUtils:
         self.filepath = filepath
         self.proxy = self.load_image(filepath)
         self.extension = split_ext(filepath)[1]
+        
 
         self.header = None
 
@@ -39,6 +47,11 @@ class ImageUtils:
             self.header = self.proxy.header
         else:
             self.header = generate_header(first_dim, second_dim, third_dim, dtype)
+
+        if dtype is not None:
+            self.dtype = dtype
+        else:
+            self.dtype = self.header['datatype']
 
         self.affine = self.header.get_best_affine()
         self.header_size = self.header.single_vox_offset
@@ -282,56 +295,341 @@ class ImageUtils:
 
         bytes_per_voxel = self.header['bitpix'] / 8
 
-        print y_size, z_size, x_size
 
         total_read = 0
         total_seek = 0
-        total_defrag = 0
+        total_num_seeks = 0
         total_write = 0
 
         # if a mem is inputted as 0, proceed with naive implementation (same as not inputting a value for mem)
         mem = None if mem == 0 else mem
 
-        with open(legend, "r") as legend:
+        splits = sort_split_names(legend)
+        #eof = splits[-1].strip()
+        remaining_mem = mem
+        data_dict = {}
 
-            splits = legend.readlines()
-            eof = splits[-1].strip()
+        unread_split = None
+        
+        start_index = 0
+        end_index = 0
+
+        while start_index < len(splits):
+
+            t = time()
+            
+            if mem is not None:
+                end_index = self.initialize_dict(data_dict, remaining_mem, splits, start_index, bytes_per_voxel, y_size, z_size, x_size)
+            else:
+                end_index += 1
+
+            print "End index: ", end_index 
+            self.insert_elems(data_dict, splits, start_index, end_index, bytes_per_voxel, y_size, z_size, x_size)
+            read_time = time() - t
+
+            start_index = end_index
+
+
+            seek_time, num_seeks, write_time = write_to_file(data_dict, reconstructed, bytes_per_voxel)
+
+            total_read += read_time
+            total_seek += seek_time
+            total_num_seeks += num_seeks
+            total_write += write_time
+
             remaining_mem = mem
-            data_dict = {}
-
-            unread_split = None
-
-            for split_name in splits:
-
-                print "Remaining mem: ", remaining_mem
-                split_name = split_name.strip()
-
-                if unread_split is not None:
-                    unread_split, remaining_mem, read_time = insert_in_dict(data_dict, unread_split, remaining_mem, mem,
-                                                                            bytes_per_voxel, y_size, z_size)
-
-                if unread_split is None:
-                    unread_split, remaining_mem, read_time = insert_in_dict(data_dict, split_name, remaining_mem, mem,
-                                                                            bytes_per_voxel, y_size, z_size)
-
-                total_read += read_time
-
-                # cannot load another block into memory, must write slice
-                if remaining_mem <= 0 or split_name == eof:
-                    print "Remaining memory:{0}".format(remaining_mem)
-
-                    seek_time, defrag_time, write_time = write_to_file(data_dict, reconstructed, bytes_per_voxel)
-
-                    total_seek += seek_time
-                    total_defrag += defrag_time
-                    total_write += write_time
-
-                    remaining_mem = mem
 
         print "Total time spent reading: ", total_read
         print "Total time spent seeking: ", total_seek
-        print "Total time spent defragmenting: ", total_defrag
+        print "Total number of seeks: ", total_num_seeks
         print "Total time spent writing: ", total_write
+
+    def insert_elems(self, data_dict, splits, start_index, end_index, bytes_per_voxel, y_size, z_size, x_size):
+        """
+        Insert elements into pre-initialized dictionary. If naive implementation of clustered reads, create dictionary with elements.
+        
+        Keyword arguments:
+
+        data_dict       - pre-initialized or empty (if naive) dictionary to store key-value pairs representing seek position and value to be written, respectively
+        splits          - list of split filenames
+        start_index     - Start position in splits for instance of clustered read
+        end_index       - End position in splits for instance of clustered reads
+        bytes_per_voxel - Amount of bytes in a voxel in the reconstructed image
+        y_size          - first dimension's array size in reconstructed image
+        z_size          - second dimensions's array size in reconstructed image
+        x_size          - third dimensions's array size in reconstructed image
+
+        """
+    
+        write_type = None
+        start_split = Split(splits[start_index].strip())
+        start_pos = pos_to_int_tuple(start_split.split_pos)
+
+        end_split = Split(splits[end_index - 1].strip())
+        split_pos = pos_to_int_tuple(end_split.split_pos) 
+        end_pos = (split_pos[0] + end_split.split_y, split_pos[1] + end_split.split_z, split_pos[2] + end_split.split_x)
+
+        # determine write configuration
+        if start_pos[0] == 0 and start_pos[1] == 0 and end_pos[0] == y_size and end_pos[1] == z_size:
+            write_type = ClusteredWrites.SLICES
+        
+        elif start_pos[0] == 0 and end_pos[0] == y_size:
+            write_type = ClusteredWrites.COMPLETE
+
+        else:  
+            write_type = ClusteredWrites.INCOMPLETE
+
+        for i in range(start_index, end_index):
+
+            split_im = Split(splits[i].strip())
+            split_pos = pos_to_int_tuple(split_im.split_pos)
+            idx_start = 0
+
+
+            # split is a complete slice
+            # WARNING: Untested
+            if split_im.split_y  == y_size and split_im.split_z == z_size:
+                data_len = split_im.split_y * split_im.split_z * split_im.split_x
+
+                key = self.header.single_vox_offset + bytes_per_voxel * (
+                        start_pos[0] + start_pos[1] * y_size + start_pos[2] * y_size * z_size)
+
+                if write_type == ClusteredWrites.SLICES:
+
+                    idx_start = (split_pos[0] - start_pos[0]) + (split_pos[1] - start_pos[1]) * y_size + (
+                        split_pos[2] - start_pos[2]) * y_size * z_size
+                    idx_end =  idx_start + data_len
+        
+                    split_data = split_im.split_proxy.get_data()
+              
+                    try: 
+                        data_dict[k][idx_start:idx_end] = split_data.flatten('F')  
+                    # is a naive read        
+                    except:
+                        data_dict[k] = split_data.flatten('F')                
+                else:
+                    print "ERROR: writing less than a slice at a time, but split is a slice"
+                    sys.exit(1)
+
+            # split is a complete row
+            # WARNING: Untested
+            elif split_im.split_y == y_size and split_im.split_z < z_size:
+                data_len = split_im.split_y * split_im.split_z
+
+                for i in xrange(split_im.split_x):
+                
+                    if write_type == ClusteredWrites.SLICES:
+                        key = self.header.single_vox_offset + bytes_per_voxel * (
+                            start_pos[0] + start_pos[1] * y_size + (start_pos[2]) * y_size * z_size)
+
+                        idx_start = (split_pos[0] - start_pos[0]) + (split_pos[1] - start_pos[1]) * y_size + (
+                            split_pos[2] + i - start_pos[2]) * y_size * z_size 
+                        idx_end =  idx_start + data_len 
+
+                    elif write_type == ClusteredWrites.COMPLETE:
+                        dict_key = self.header.single_vox_offset + bytes_per_voxel * (
+                            start_pos[0] + (start_pos[1] * y_size) + (start_pos[2] + i) * y_size * z_size)
+                        
+                        idx_start = (split_pos[0] - start_pos[0]) + (split_pos[1] - start_pos[1]) * y_size 
+
+                    else:  
+                        print "ERROR: Reading complete rows, but writing incomplete rows"
+
+                    idx_end = idx_start + data_len
+                    split_data = split_im.split_proxy.get_data()
+            
+                    try:
+                        data_dict[k][idx_start:idx_end] = split_data[:, :, i].flatten('F')
+                    # is a naive read
+                    except:
+                        data_dict[k] = split_data[:, :, i].flatten('F')
+                
+                
+            # split is an incomplete row
+            else:
+                data_len = split_im.split_y
+
+                idx_start = 0
+                idx_end = 0
+                
+                for i in xrange(split_im.split_x):
+                    for j in xrange(split_im.split_z):
+                        
+                        if write_type == ClusteredWrites.SLICES:
+                            dict_key = self.header.single_vox_offset + bytes_per_voxel * (
+                                start_pos[0] + (start_pos[1] * y_size) + (start_pos[2] * y_size * z_size))
+
+                            idx_start = (split_pos[0] - start_pos[0]) + (split_pos[1] + j - start_pos[1]) * y_size + (
+                                split_pos[2] + i - start_pos[2]) * y_size * z_size
+                            
+                        elif write_type == ClusteredWrites.COMPLETE:
+                            dict_key = self.header.single_vox_offset + bytes_per_voxel * (
+                                start_pos[0] + (start_pos[1] * y_size) + (start_pos[2] + i) * y_size * z_size)
+                        
+                            idx_start = (split_pos[0] - start_pos[0]) + (split_pos[1] + j - start_pos[1]) * y_size   
+
+                        else:
+                            dict_key = self.header.single_vox_offset + bytes_per_voxel * (
+                                start_pos[0] + (start_pos[1] + j) * y_size + (start_pos[2] + i) * y_size * z_size)
+
+                            idx_start = split_pos[0] - start_pos[0]
+                            
+                        idx_end = idx_start + data_len
+
+                        split_data = split_im.split_proxy.get_data()
+
+                        try:
+                            data_dict[dict_key][idx_start:idx_end] = split_data[:, j, i]
+                        except:
+                            # Naive reading
+                            data_dict[dict_key] = split_data[:, j, i]
+
+
+    def initialize_dict(self, data_dict, remaining_mem, splits, start_index, bytes_per_voxel, y_size, z_size, x_size):
+        """
+        Pre-initialize dictionary for inserting data
+
+        Keyword arguments:
+
+        data_dict       - pre-initialized or empty (if naive) dictionary to store key-value pairs representing seek position and value to be written, respectively
+        remaining_mem   - remaining available memory in bytes
+        splits          - list of split filenames (sorted)
+        start_index     - Start position in splits for instance of clustered read
+        bytes_per_voxel - number of bytes for a voxel in the reconstructed image
+        y_size          - first dimension of reconstructed image's array size
+        z_size          - second dimension of reconstructed image's array size
+        x_size          - third dimension of reconstructed image's array size
+
+        Returns: update end index of read
+
+        """
+
+        split_name = splits[start_index].strip()
+        
+        start_im = Split(split_name)
+        start_pos = pos_to_int_tuple(start_im.split_pos)
+            
+        remaining_mem -= start_im.split_bytes
+
+        if remaining_mem < 0:
+            print "ERROR: insufficient memory provided"
+            sys.exit(1)
+
+        split_positions = []
+        split_positions.append(start_pos)
+
+        end_idx = 0
+
+        for i in range(start_index + 1, len(splits)):
+
+            split_name = splits[i].strip()
+            split_im = Split(split_name)
+            split_pos = pos_to_int_tuple(split_im.split_pos)
+
+            remaining_mem -= split_im.split_bytes
+
+            if remaining_mem >= 0:
+                split_positions.append(split_pos)
+
+            end_idx = i
+            if remaining_mem <= 0:
+                break                
+
+        # last header read does not fit in memory. Load previous header
+        if remaining_mem < 0:
+
+            split_im = Split(splits[i-1].strip())
+            split_pos = pos_to_int_tuple(split_im.split_pos)
+            end_idx -= 1
+        
+        end_pos = (split_pos[0] + split_im.split_y, split_pos[1] + split_im.split_z, split_pos[2] + split_im.split_x)
+        split_im, end_idx, end_pos = adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx, split_positions, y_size, z_size)
+        
+        print "Writing from position {0} to {1}".format(start_pos, end_pos)
+        # case 1 - complete slices
+        if start_pos[0] == 0 and start_pos[1] == 0 and end_pos[0] == y_size and end_pos[1] == z_size:
+            print "Allocating complete slices"
+            
+            data_len = (end_pos[0] - start_pos[0]) * (end_pos[1] - start_pos[1]) * (end_pos[2] - start_pos[2])
+
+            print "Initializing to data length: ", data_len
+
+            key = self.header.single_vox_offset + bytes_per_voxel * (
+                start_pos[0] + (start_pos[1] * y_size) + (start_pos[2]  * y_size * z_size))
+
+            data_dict[key] = np.empty(data_len, dtype=self.dtype)
+
+
+        # case 2 - complete rows
+        elif start_pos[0] == 0 and end_pos[0] == y_size:
+            print "Allocating complete rows"
+            
+            data_len = (end_pos[0] - start_pos[0]) * (end_pos[1] - start_pos[1])
+
+            print "Initializing to data length: ", data_len
+
+            for j in xrange(end_pos[2] - start_pos[2]):
+                key = self.header.single_vox_offset + bytes_per_voxel * (
+                    start_pos[0] + (start_pos[1] * y_size) + ((start_pos[2] + j) * y_size * z_size))
+
+                data_dict[key] = np.empty(data_len, dtype = self.dtype)
+
+        # case 3 - incomplete row + complete row
+        elif end_pos[1] - split_shape[1] >= start_pos[1] + start_shape[1] and ((start_pos[0] > 0) or (end_pos[0] < y_size)):
+
+            # write complete row(s) 
+            if start_pos[0] == 0:
+
+                print "Allocating complete rows"
+                
+                data_len = y_size * (split_pos[1] - start_pos[1])
+
+                print "Initializing to data length: ", data_len
+
+                for j in xrange(start_shape[2]):
+                    key = self.header.single_vox_offset + bytes_per_voxel * (
+                        (start_pos[1] * y_size) + ((start_pos[2] + j) * y_size * z_size))
+
+                    data_dict[key] = np.empty(data_len, dtype = self.dtype)
+                    
+                
+            # write incomplete row
+            else:
+            
+                print "Allocating incomplete row"
+
+                data_len = y_size - start_pos[0]
+
+                print "Initializing to data length: ", data_len
+
+                for j in xrange(split_shape[2]):
+                    for k in xrange(split_shape[1]):
+                        key = self.header.single_vox_offset + bytes_per_voxel * (
+                            start_pos[0] + ((start_pos[1] + k) * y_size) + ((start_pos[2] + j) * y_size * z_size))
+
+                        data_dict[key] = np.empty(data_len, dtype = self.dtype)
+    
+        # case 4: one incomplete row 
+        elif (start_pos[0] > 0 or end_pos[0] < y_size) and start_pos[1] == split_pos[1]:
+
+            print "Allocating incomplete row"
+
+            data_len = end_pos[0] - start_pos[0]
+
+            print "Initializing to data length: ", data_len
+            for j in xrange(start_shape[2]):
+                for k in xrange(start_shape[1]):
+                    key = self.header.single_vox_offset + bytes_per_voxel * (
+                        start_pos[0] + ((start_pos[1] + k) * y_size) + ((start_pos[2] + j) * y_size * z_size))
+
+                    data_dict[key] = np.empty(data_len, dtype = self.dtype)
+        else:
+            print "ERROR: case not currently supported ", start_pos, end_pos
+            sys.exit(1)     
+    
+        return end_idx + 1                       
+                    
+                
 
     def multiple_reads(self, reconstructed, legend, mem):
         """ Reconstruct an image given a set of splits and amount of available memory.
@@ -486,6 +784,82 @@ class ImageUtils:
         if self.proxy is None:
             return "w+b"
         return "r+b"
+
+def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx, split_positions, y_size, z_size):
+    """
+    Adjusts the end split should the read not be a complete slice, complete row, or incomplete row
+    
+    Keyword arguments
+    splits          - list of split filenames
+    start_pos       - the starting position of the first split in the reconstructed array
+    split_pos       - the starting position of the last split in the reconstructed array
+    end_pos         - the end position of the last split in the reconstructed array
+    start_index     - the starting index of the first split read in splits
+    end_idx         - the end index of the last split read in splits
+    split_positions - a list of all the read split's positions
+    y_size          - the first dimension of the reconstructed image's array size
+    z_size          - the second dimension of the reconstructed image's array size
+
+    Returns: the "correct" last split, its index in splits, and its end position
+    """  
+ 
+    adj_end_idx = end_idx
+         
+    # adjust end split it incomplete row spanning different slices/rows
+    if start_pos[0] > 0  and (start_pos[2] < split_pos[2] or start_pos[1] < split_pos[1]):
+        # get first row's last split
+        curr_end_y = start_pos[1]
+
+        for x in range(1, len(split_positions)):
+            if split_positions[x][1] != curr_end_y:
+                adj_end_idx = start_index + x - 1
+                break
+
+    # adjust end split if splits are on different slices and incomplete slices are to be written. 
+    elif start_pos[2] < split_pos[2]:
+
+        # complete slices
+        if start_pos[0] == 0 and start_pos[1] == 0 and (end_pos[0] < y_size or end_pos[1] < z_size):
+            # need to find last split read before slice change
+            
+            curr_end_x = split_pos[2]
+            for x in range(-2, -len(split_positions) -1, -1):
+                if split_positions[x][2] < curr_end_x:
+                    adj_end_idx = start_index + len(split_positions) + x
+                    break
+
+        # complete rows
+        elif start_pos[0] == 0 and start_pos[1] > 0:
+
+            # get first slice's last split
+            curr_end_x = start_pos[2]
+    
+            for x in range(1, len(split_positions)):
+                if split_positions[x][2] > curr_end_x:
+                    adj_end_idx = start_index + x - 1
+                    break
+     
+    # adjust end split if splits start on the same slice but on different rows, and read splits contain and incomplete row and a complete row
+    elif start_pos[2] == split_pos[2] and start_pos[1] < split_pos[1] and end_pos[0] != y_size:                    
+
+        # get last split of second-to-last row 
+        curr_end_y = split_pos[1]
+        
+        for x in range(-2, -len(split_positions) -1, -1):
+            if split_positions[x][1] < curr_end_y:
+                adj_end_idx = start_index + len(split_positions) + x
+                break
+
+    #load new end
+    if adj_end_idx != end_idx:
+        split_im = Split(splits[adj_end_idx].strip())
+        split_pos = pos_to_int_tuple(split_im.split_pos)
+        end_pos = (split_pos[0] + split_im.split_y, split_pos[1] + split_im.split_z, split_pos[2] + split_im.split_x)
+
+    return Split(splits[adj_end_idx].strip()), adj_end_idx, end_pos
+
+    
+
 
 def generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, out_dir, filename_prefix, extension):
     """
@@ -687,72 +1061,6 @@ def write_array_to_file(data_array, to_file, write_offset):
 
     return seek_time, write_time, seek_number
 
-def insert_in_dict(data_dict, split_name, remaining_mem, mem, bytes_per_voxel, y_size, z_size):
-    """Insert contiguous chunks of data contained in splits as key-value pairs in dictionary where the key is the byte position
-       in the reconstructed image and the value is the flattened numpy array containing contiguous data
-    Keyword arguments:
-    data_dict                           : dictionary containing key-value pairs of contiguous memory chunks. Key is byte position in reconstructed image.
-    split_name                          : filename of split
-    remaining_mem                       : how much available memory remains to be used (bytes)
-    mem                                 : total amount of available memory
-    bytes_per_voxel                     : number of bytes in a voxel in the reconstructed image
-    y_size                              : first dimension size in reconstructed image
-    z_size                              : second dimension size in reconstructed image
-    Returns None if the split was inserted into dictionary, and the split's filepath if it was not inserted due to lack of remaining memory. Throws an error
-    if there is an insufficient total amount of available memory
-    """
-
-    print "Reading split {0}".format(split_name)
-    split_pos = split_ext(split_name)[0].split('_')
-
-    split = nib.load(split_name)
-    split_shape = split.header.get_data_shape()
-
-    # A bit useless for now, but will become important if the datatype of splits and the datatype of the reconstructed do not match
-    # in which we'll have to modify data type of data array (Not implemented yet)
-    bytes_per_voxel_split = split.header['bitpix'] / 8
-
-    split_bytes = split.header.single_vox_offset + bytes_per_voxel_split * (
-    split_shape[0] * split_shape[1] * split_shape[2])
-
-    try:
-        if split_bytes > mem:
-            raise IOError(
-                'Size of split ({0} bytes) is greater than total available memory ({1} bytes)'.format(split_bytes, mem))
-    except IOError as e:
-        print 'Error: ', e
-        sys.exit(1)
-
-    read_time = 0
-
-    if remaining_mem is not None:
-        remaining_mem = remaining_mem - (split_bytes)
-
-    # if the split cannot be read into memory, return split name such that it can be stored to be read during next clustered read iteration
-    if remaining_mem is not None and remaining_mem <= 0:
-        return split_name, remaining_mem, read_time
-
-    else:
-        read_s = time()
-        data = split.get_data()
-
-        # if split is a slice, the entire array can be flattened as it is all contiguous memory. Otherwise, needs to be partitioned into contiguous chunks.
-        if split_shape[0] == y_size and split_shape[1] == z_size:
-            data_dict[split.header.single_vox_offset + bytes_per_voxel * (
-            int(split_pos[-3]) + (int(split_pos[-2])) * y_size + (
-            int(split_pos[-1])) * y_size * z_size)] = data.flatten('F')
-        else:
-            for i in range(0, split_shape[2]):
-                for j in range(0, split_shape[1]):
-                    key = split.header.single_vox_offset + bytes_per_voxel * (
-                    int(split_pos[-3]) + (int(split_pos[-2]) + j) * y_size + (int(split_pos[-1]) + i) * y_size * z_size)
-                    data_dict[key] = data[..., j, i].flatten('F')
-
-        read_time = time() - read_s
-        print "Read time: ", read_time
-
-    return None, remaining_mem, read_time
-
 
 def write_to_file(data_dict, reconstructed, bytes_per_voxel):
     """Write dictionary data to file
@@ -762,57 +1070,27 @@ def write_to_file(data_dict, reconstructed, bytes_per_voxel):
     bytes_per_voxel                     : number of bytes contained in a voxel in the reconstructed image
     """
 
-    # defragment data before writing to file
-    defrag_time = defrag_dict(data_dict, bytes_per_voxel)
-
-    print len(data_dict)
-
     seek_time = 0
     write_time = 0
+    num_seeks = 0
 
     print "Writing data"
     for k in sorted(data_dict.keys()):
+        
+                
         seek_start = time()
         reconstructed.seek(k, 0)
         seek_time += time() - seek_start
-
+    
         write_start = time()
         reconstructed.write(data_dict[k].tobytes('F'))
         write_time += time() - write_start
 
+        num_seeks += 1
         # can remove from dictionary
         del data_dict[k]
 
-    print "Seek time: ", seek_time
-    print "Write time: ", write_time
-
-    return seek_time, defrag_time, write_time
-
-
-def defrag_dict(data_dict, bytes_per_voxel):
-    """ Defragment dictionary containing contiguous data as key-value pairs such that key-value pairs that remain do not contain any
-        data that is contiguous to another key-value pair.
-        Keyword arguments:
-        data_dict                               : dictionary containing contiguous data chunks as key-value pairs (key is position in reconstructed in bytes)
-        bytes_per_voxel                         : number of bytes in a voxel in the reconstructed image
-    """
-
-    def_s = time()
-    previous_k = None
-    print "Dictionary size: ", len(data_dict)
-    for k in sorted(data_dict.keys()):
-        if previous_k is not None and k == previous_k + (data_dict[previous_k].shape[0] * bytes_per_voxel):
-            data_dict[previous_k].resize(len(data_dict[previous_k]) + len(data_dict[k]))
-            data_dict[previous_k][-len(data_dict[k]):] = data_dict[k]
-            del data_dict[k]
-        else:
-            previous_k = k
-
-    defrag_time = time() - def_s
-    print "Defragmentation time: ", time() - def_s
-    print "Dictionary size after defragmentation: ", len(data_dict)
-
-    return defrag_time
+    return seek_time,num_seeks, write_time
 
 
 def generate_header(first_dim, second_dim, third_dim, dtype):
@@ -884,6 +1162,8 @@ def split_ext(filepath):
 
     return root, ext_1
 
+def pos_to_int_tuple(pos):
+    return (int(pos[-3]), int(pos[-2]), int(pos[-1]))
 
 get_bytes_per_voxel = {'uint8': np.dtype('uint8').itemsize,
                        'uint16': np.dtype('uint16').itemsize,
