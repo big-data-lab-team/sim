@@ -303,18 +303,18 @@ class ImageUtils:
 
         bytes_per_voxel = self.header['bitpix'] / 8
 
+        splits = sort_split_names(legend)
 
         total_read = 0
         total_assign = 0
         total_tobyte = 0
         total_seek = 0
-        total_num_seeks = 0
         total_write = 0
+        total_num_seeks = len(splits)
 
         # if a mem is inputted as 0, proceed with naive implementation (same as not inputting a value for mem)
         mem = None if mem == 0 else mem
 
-        splits = sort_split_names(legend)
         #eof = splits[-1].strip()
         remaining_mem = mem
         data_dict = {}
