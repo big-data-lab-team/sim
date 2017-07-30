@@ -280,8 +280,7 @@ class ImageUtils:
         if self.proxy is None:
             self.proxy = self.load_image(self.filepath)
 
-        return total_extract_time, total_read_time, total_assign_time, total_to_bytes_time, \
-               total_write_time, total_seek_time, total_seek_number
+        return total_read_time, total_write_time, total_seek_time, total_seek_number
 
     # TODO:make it work with HDFS
     def clustered_read(self, reconstructed, legend, mem, benchmark):
@@ -327,10 +326,10 @@ class ImageUtils:
         while start_index < len(splits):
 
             
-            #if mem is not None:
-            end_index = self.initialize_dict(data_dict, remaining_mem, splits, start_index, bytes_per_voxel, y_size, z_size, x_size)
-            #else:
-            #end_index += 1
+            if mem is not None:
+                end_index = self.initialize_dict(data_dict, remaining_mem, splits, start_index, bytes_per_voxel, y_size, z_size, x_size)
+            else:
+                end_index += 1
 
             print "End index: ", end_index 
             read_time, assign_time = self.insert_elems(data_dict, splits, start_index, end_index, bytes_per_voxel, y_size, z_size, x_size)
@@ -486,14 +485,13 @@ class ImageUtils:
                         
                 split_data = split_im.split_proxy.get_data()
                 
-                t = time()
-                data = split_data[:, j, i]
-                read_time += time() - t
 
                 for i in xrange(split_im.split_x):
                     for j in xrange(split_im.split_z):
                 
+                        t = time()
                         data = split_data[:, j, i]
+                        read_time += time() - t
                                 
                         if write_type == ClusteredWrites.SLICES:
                             dict_key = self.header.single_vox_offset + bytes_per_voxel * (
@@ -522,11 +520,11 @@ class ImageUtils:
                         except:
                             # Naive reading
                             data_dict[dict_key] = data
-                        assing_time += time() - t
+                        assign_time += time() - t
 
         return read_time, assign_time
 
-     def initialize_dict(self, data_dict, remaining_mem, splits, start_index, bytes_per_voxel, y_size, z_size, x_size):
+    def initialize_dict(self, data_dict, remaining_mem, splits, start_index, bytes_per_voxel, y_size, z_size, x_size):
         """
         Pre-initialize dictionary for inserting data
 
@@ -568,14 +566,13 @@ class ImageUtils:
             split_im = Split(split_name)
             split_pos = pos_to_int_tuple(split_im.split_pos)
 
-            if remaining_mem is not None:
-                remaining_mem -= split_im.split_bytes
+            remaining_mem -= split_im.split_bytes
 
-                if remaining_mem >= 0:
-                    split_positions.append(split_pos)
+            if remaining_mem >= 0:
+                split_positions.append(split_pos)
 
             end_idx = i
-            if remaining_mem is None or remaining_mem <= 0:
+            if remaining_mem <= 0:
                 break                
 
         # last header read does not fit in memory. Load previous header
@@ -591,11 +588,11 @@ class ImageUtils:
         print "Writing from position {0} to {1}".format(start_pos, end_pos)
         # case 1 - complete slices
         if start_pos[0] == 0 and start_pos[1] == 0 and end_pos[0] == y_size and end_pos[1] == z_size:
-            print "Allocating complete slices"
+            #print "Allocating complete slices"
             
             data_len = (end_pos[0] - start_pos[0]) * (end_pos[1] - start_pos[1]) * (end_pos[2] - start_pos[2])
 
-            print "Initializing to data length: ", data_len
+            #print "Initializing to data length: ", data_len
 
             key = self.header.single_vox_offset + bytes_per_voxel * (
                 start_pos[0] + (start_pos[1] * y_size) + (start_pos[2]  * y_size * z_size))
@@ -605,11 +602,11 @@ class ImageUtils:
 
         # case 2 - complete rows
         elif start_pos[0] == 0 and end_pos[0] == y_size:
-            print "Allocating complete rows"
+            #print "Allocating complete rows"
             
             data_len = (end_pos[0] - start_pos[0]) * (end_pos[1] - start_pos[1])
 
-            print "Initializing to data length: ", data_len
+            #print "Initializing to data length: ", data_len
 
             for j in xrange(end_pos[2] - start_pos[2]):
                 key = self.header.single_vox_offset + bytes_per_voxel * (
@@ -620,11 +617,11 @@ class ImageUtils:
         # case 4: one incomplete row 
         elif (start_pos[0] > 0 or end_pos[0] < y_size) and start_pos[1] == split_pos[1]:
 
-            print "Allocating incomplete row"
+            #print "Allocating incomplete row"
 
             data_len = end_pos[0] - start_pos[0]
 
-            print "Initializing to data length: ", data_len
+            #print "Initializing to data length: ", data_len
             for j in xrange(start_im.split_x):
                 for k in xrange(start_im.split_z):
                     key = self.header.single_vox_offset + bytes_per_voxel * (
@@ -1171,7 +1168,7 @@ def write_to_file(data_dict, reconstructed, bytes_per_voxel):
     num_seeks = 0
     tobyte_time = 0
 
-    print "Writing data"
+    #print "Writing data"
     for k in sorted(data_dict.keys()):
         
                 
