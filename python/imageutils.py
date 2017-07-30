@@ -143,12 +143,13 @@ class ImageUtils:
 
             is_rem_y = False
 
-    #WARNING: UNTESTED
+    #TODO: Test the implementation to make sure it works
     def split_clustered_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
                                 extension="nii"):
         """
         Split the input image into several splits, all share with the same shape
-        For now only support .nii extension
+        For now only supports Nifti1 images
+
         :param Y_splits: How many splits in Y-axis
         :param Z_splits: How many splits in Z-axis
         :param X_splits: How many splits in X-axis
@@ -158,6 +159,8 @@ class ImageUtils:
         :param extension: extension of each split
         :return:
         """
+
+        print "WARNING: This function has not yet been tested."
 
         # calculate remainder based on the original image file
         Y_size, Z_size, X_size = self.header.get_data_shape()
@@ -181,7 +184,7 @@ class ImageUtils:
 
         num_splits = 0
         if mem is not None:
-            num_splits = int(mem / (bytes_per_voxel * y_size * z_size * x_size))
+            num_splits = mem / (bytes_per_voxel * y_size * z_size * x_size)
         else:
             num_splits = 1
 
