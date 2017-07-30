@@ -143,6 +143,66 @@ class ImageUtils:
 
             is_rem_y = False
 
+    #WARNING: UNTESTED
+    def split_clustered_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
+                                extension="nii"):
+        """
+        Split the input image into several splits, all share with the same shape
+        For now only support .nii extension
+        :param Y_splits: How many splits in Y-axis
+        :param Z_splits: How many splits in Z-axis
+        :param X_splits: How many splits in X-axis
+        :param out_dir: Output Splits dir
+        :param mem: memory load each round
+        :param filename_prefix: each split's prefix filename
+        :param extension: extension of each split
+        :return:
+        """
+
+        # calculate remainder based on the original image file
+        Y_size, Z_size, X_size = self.header.get_data_shape()
+        bytes_per_voxel = self.header['bitpix'] / 8
+        original_img_voxels = X_size * Y_size * Z_size
+
+        if X_size % X_splits != 0 or Z_size % Z_splits != 0 or Y_size % Y_splits != 0:
+            raise Exception("There is remainder after splitting, please reset the y,z,x splits")
+        x_size = X_size / X_splits
+        z_size = Z_size / Z_splits
+        y_size = Y_size / Y_splits
+
+        # get all split_names and write them to the legend file
+        split_names = generate_splits_name(y_size, z_size, x_size, Y_size, Z_size, X_size, out_dir, filename_prefix,
+                                           extension)
+        legend_file = generate_legend_file(split_names, "legend.txt", out_dir)
+
+        start_index = end_index = 0
+
+        mem = None if mem is not None and mem == 0 else mem
+
+        num_splits = 0
+        if mem is not None:
+            num_splits = int(mem / (bytes_per_voxel * y_size * z_size * x_size))
+        else:
+            num_splits = 1
+
+        if num_splits == 0:
+            print 'ERROR: available memory is too low'
+            sys.exit(1)
+
+        for i in range(start_index, len(split_names), num_splits):
+            start_pos = pos_to_int_tuple(split_ext(split_names[i])[0].split('_'))
+            end_pos = pos_to_int_tuple(split_ext(split_names[num_splits - 1])[0].split('_'))
+            data = self.proxy.dataobj[start_pos[0]:end_pos[0], start_pos[1]:end_pos[1], start_pos[2]:end_pos[2]]
+    
+            for j in xrange(num_splits):
+                y_s = start_pos[0] + j * y_size
+                z_s = start_pos[1] + j * z_size
+                x_s = start_pos[2] + j * x_size
+
+                split_data = data[y_s : y_s + y_size, z_s : z_s + z_size, x_s : x_s + x_size]
+                im = nib.Nifti1Image(split_data, self.affine)
+                nib.save(im, split_names[i + j])
+                    
     def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
                               extension="nii"):
         """
