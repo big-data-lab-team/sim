@@ -195,7 +195,7 @@ class ImageUtils:
         for i in range(start_index, len(split_names), num_splits):
             start_pos = pos_to_int_tuple(split_ext(split_names[i])[0].split('_'))
             end_pos = pos_to_int_tuple(split_ext(split_names[num_splits - 1])[0].split('_'))
-            data = self.proxy.dataobj[start_pos[0]:end_pos[0], start_pos[1]:end_pos[1], start_pos[2]:end_pos[2]]
+            data = self.proxy.dataobj[start_pos[0]:end_pos[0] + y_size, start_pos[1]:end_pos[1] + z_size, start_pos[2]:end_pos[2] + x_size]
     
             for j in xrange(num_splits):
                 y_s = start_pos[0] + j * y_size
