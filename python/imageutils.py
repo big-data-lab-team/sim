@@ -491,7 +491,6 @@ class ImageUtils:
                         read_time += time() - t
                         
                         key = split_pos[0] + (split_pos[1] + j) * y_size + (split_pos[2] + i) * y_size * z_size
-                        key_count +=1
                         t = time()
                         data_dict[key] = data
                         assign_time += time() - t
@@ -1053,7 +1052,6 @@ def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset):
     seek_number = 0
 
     no_seek = 0
-    prev_tell = 0
 
 
     for k in sorted(data_dict.keys()):
@@ -1066,8 +1064,6 @@ def write_dict_to_file(data_dict, to_file, bytes_per_voxel, header_offset):
             to_file.seek(seek_pos, 0)
             seek_number += 1
             seek_time += time() - seek_start
-        
-        prev_tell = to_file.tell()
 
         data_bytes = data_dict[k]
 
