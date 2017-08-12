@@ -143,7 +143,6 @@ class ImageUtils:
 
             is_rem_y = False
 
-    #TODO: Test the implementation to make sure it works
     def split_clustered_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
                                 extension="nii"):
         """
@@ -160,7 +159,12 @@ class ImageUtils:
         :return:
         """
 
-        print "WARNING: This function has not yet been tested."
+
+        total_read_time = 0
+        total_write_time = 0
+        total_seek_time = 0
+        total_seek_number = 0
+
 
         # calculate remainder based on the original image file
         Y_size, Z_size, X_size = self.header.get_data_shape()
@@ -192,20 +196,58 @@ class ImageUtils:
             print 'ERROR: available memory is too low'
             sys.exit(1)
 
-        for i in range(start_index, len(split_names), num_splits):
-            start_pos = pos_to_int_tuple(split_ext(split_names[i])[0].split('_'))
-            end_pos = pos_to_int_tuple(split_ext(split_names[num_splits - 1])[0].split('_'))
-            data = self.proxy.dataobj[start_pos[0]:end_pos[0] + y_size, start_pos[1]:end_pos[1] + z_size, start_pos[2]:end_pos[2] + x_size]
-    
-            for j in xrange(num_splits):
-                y_s = start_pos[0] + j * y_size
-                z_s = start_pos[1] + j * z_size
-                x_s = start_pos[2] + j * x_size
+        total_seek_number += len(split_names)        
 
-                split_data = data[y_s : y_s + y_size, z_s : z_s + z_size, x_s : x_s + x_size]
+        while start_index < len(split_names):
+            start_pos = pos_to_int_tuple(split_ext(split_names[start_index])[0].split('_'))
+
+            end_index = start_index + num_splits - 1
+
+            if end_index >= len(split_names):
+                end_index = len(split_names) - 1  
+                
+            split_pos = pos_to_int_tuple(split_ext(split_names[end_index])[0].split('_'))
+            end_pos = (split_pos[0] + y_size, split_pos[1] + z_size, split_pos[2] + x_size)
+            split_pos_in_range = [ pos_to_int_tuple(split_ext(x)[0].split('_')) for x in split_names[start_index:end_index + 1] ]     
+
+            end_index, end_pos = adjust_end_read(split_names, start_pos, split_pos, end_pos, start_index,
+                                     end_index, split_pos_in_range, Y_size, Z_size, (y_size, z_size, x_size))
+        
+            print "Reading from {0} at index {1} --> {2} at index {3}".format(start_pos, start_index, end_pos, end_index)
+            extracted_shape = (end_pos[0] - start_pos[0], end_pos[1] - start_pos[1], end_pos[2] - start_pos[2])
+
+            if extracted_shape[0] < Y_size:
+                total_seek_number += extracted_shape[1] * extracted_shape[2]
+            elif extracted_shape[1] < Z_size:
+                total_seek_number += extracted_shape[2]
+            else:
+                total_seek_number += 1
+
+
+            t = time()
+            data = self.proxy.dataobj[start_pos[0]:end_pos[0], start_pos[1]:end_pos[1], start_pos[2]:end_pos[2]]
+            total_read_time += time() - t    
+
+            for j in xrange(end_index - start_index + 1):
+                split_start = pos_to_int_tuple(split_ext(split_names[start_index + j])[0].split('_'))
+                split_start = (split_start[0] - start_pos[0], split_start[1] - start_pos[1], split_start[2] - start_pos[2])
+            
+                y_e = split_start[0] + y_size
+                z_e = split_start[1] + z_size
+                x_e = split_start[2] + x_size
+
+                split_data = data[split_start[0] : y_e, split_start[1] : z_e, split_start[2] : x_e]
                 im = nib.Nifti1Image(split_data, self.affine)
-                nib.save(im, split_names[i + j])
-                    
+                
+                t = time()
+                nib.save(im, split_names[start_index + j])
+                total_write_time += time() - t
+
+                del im
+
+            start_index = end_index + 1
+        return total_read_time, total_write_time, total_seek_time, total_seek_number                    
+
     def split_multiple_writes(self, Y_splits, Z_splits, X_splits, out_dir, mem, filename_prefix="bigbrain",
                               extension="nii"):
         """
@@ -417,11 +459,11 @@ class ImageUtils:
 
     def insert_elems(self, data_dict, splits, start_index, end_index, bytes_per_voxel, y_size, z_size, x_size):
         """
-        Insert elements into pre-initialized dictionary. If naive implementation of clustered reads, create dictionary with elements.
+        Insert contiguous strips of image data into dictionary.
         
         Keyword arguments:
 
-        data_dict       - pre-initialized or empty (if naive) dictionary to store key-value pairs representing seek position and value to be written, respectively
+        data_dict       - empty dictionary to store key-value pairs representing seek position and value to be written, respectively
         splits          - list of split filenames
         start_index     - Start position in splits for instance of clustered read
         end_index       - End position in splits for instance of clustered reads
@@ -701,7 +743,7 @@ class ImageUtils:
             return "w+b"
         return "r+b"
 
-def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx, split_positions, y_size, z_size):
+def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx, split_positions, y_size, z_size, split_shape=None):
     """
     Adjusts the end split should the read not be a complete slice, complete row, or incomplete row
     
@@ -766,9 +808,13 @@ def adjust_end_read(splits, start_pos, split_pos, end_pos, start_index, end_idx,
                 break
     #load new end
     if prev_end_idx != end_idx:
-        split_im = Split(splits[end_idx].strip())
-        split_pos = pos_to_int_tuple(split_im.split_pos)
-        end_pos = (split_pos[0] + split_im.split_y, split_pos[1] + split_im.split_z, split_pos[2] + split_im.split_x)
+        try:
+            split_im = Split(splits[end_idx].strip())
+            split_pos = pos_to_int_tuple(split_im.split_pos)
+            end_pos = (split_pos[0] + split_im.split_y, split_pos[1] + split_im.split_z, split_pos[2] + split_im.split_x)
+        except:
+            split_pos = pos_to_int_tuple(split_ext(splits[end_idx].strip())[0].split('_'))
+            end_pos = (split_pos[0] + split_shape[0], split_pos[1] + split_shape[1], split_pos[2] + split_shape[2])
 
     return end_idx, end_pos
     
