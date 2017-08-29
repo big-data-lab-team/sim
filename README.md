@@ -1,4 +1,4 @@
-# mapreduce
+# Spark for neuroIMaging (sim)
 A set of Spark MapReduce programs to process brain images (large datasets and/or large images)
 
 Currently contains simple examples using Spark:
