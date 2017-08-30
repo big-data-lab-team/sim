@@ -4,6 +4,17 @@ from pyspark import SparkContext, SparkConf
 from bids.grabbids import BIDSLayout
 import argparse, json, os, subprocess, time
 
+def supports_group_analysis(boutiques_descriptor):
+    desc = json.load(open(boutiques_descriptor))
+    analysis_level_input = None
+    for input in desc["inputs"]:
+        if input["id"] == "analysis_level":
+            analysis_level_input = input
+            break
+    assert(analysis_level_input),"BIDS app descriptor has no input with id 'analysis_level'"
+    assert(analysis_level_input.get("value-choices")),"Input 'analysis_level' of BIDS app descriptor has no 'value-choices' property"   
+    return "group" in analysis_level_input["value-choices"]
+
 def create_RDD(bids_dataset_root,sc):
     layout = BIDSLayout(bids_dataset_root)
     return sc.parallelize(layout.get_subjects())
@@ -86,7 +97,7 @@ def main():
     # rdd.map(lambda x: list_files_by_participant(bids_dataset,x))
     # print(rdd.map(lambda x: list_files_by_participant(bids_dataset,x)).collect())
     
-    # Map step
+    # Map step (done for all apps)
     mapped = rdd.map(lambda x: run_bids_app(boutiques_descriptor, bids_dataset, x))
 
     # Display results
