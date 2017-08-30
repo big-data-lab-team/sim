@@ -21,11 +21,6 @@ def list_files_by_participant(bids_dataset, participant_name):
              array.append(file)
     return array
 
-def run_bids_app(bids_dataset, participant_name):
-    
-    # TODO: put the descriptor as argument
-    path, fil = op.split(__file__)
-    boutiques_descriptor = op.join(path, "bids-app-example.json")
 
 def write_invocation_file(bids_dataset, output_dir, participant_name, invocation_file):
 
