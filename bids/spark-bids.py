@@ -15,27 +15,32 @@ def supports_group_analysis(boutiques_descriptor):
     assert(analysis_level_input.get("value-choices")),"Input 'analysis_level' of BIDS app descriptor has no 'value-choices' property"   
     return "group" in analysis_level_input["value-choices"]
 
-def create_RDD(bids_dataset_root,sc):
+def create_RDD(bids_dataset_root,sc, is_tar, sub_dir='tar_subjects'):
     layout = BIDSLayout(bids_dataset_root)
-    return sc.parallelize(layout.get_subjects())
+    subjects = layout.get_subjects()    
 
-def create_subject_RDD(bids_dataset_root, sc, sub_dir='tar_subjects'):
-    layout = BIDSLayout(bids_dataset_root)
+    # Create RDD of file paths as key and tarred subject data as value
+    if is_tar:
+        try:
+            os.makedirs(sub_dir)
+        except OSError as e:
+            if e.errno != errno.EEXIST:
+                raise
+        
+        for sub in subjects:
+            files = layout.get(subject=sub)
 
-    try:
-        os.makedirs(sub_dir)
-    except OSError as e:
-        if e.errno != errno.EEXIST:
-            raise
-    
-    for sub in layout.get_subjects():
-        files = layout.get(subject=sub)
+            with tarfile.open(os.path.join(sub_dir, "sub-{0}.tar".format(sub)), "w") as tar:
+                for f in files:
+                    tar.add(f.filename)
+        return sc.binaryFiles(sub_dir)
 
-        with tarfile.open(os.path.join(sub_dir, "sub-{0}.tar".format(sub)), "w") as tar:
-            for f in files:
-                tar.add(f.filename)
-    
-    return sc.binaryFiles(sub_dir)
+    # Create RDD of tuples containing tuples of subject names and no data    
+    it = iter(subjects)
+    empty_list = [None] * len(subjects)
+    list_subjects = zip(it, empty_list)
+
+    return sc.parallelize(list_subjects)
 
 
 def pretty_print(result):
@@ -91,7 +96,7 @@ def get_bids_dataset(bids_dataset, data, subject_label):
     return os.path.join(tmp_dataset, os.path.abspath(bids_dataset))
     
 
-def run_subject_analysis(boutiques_descriptor, bids_dataset, subject_label, output_dir, data=None):
+def run_subject_analysis(boutiques_descriptor, bids_dataset, subject_label, output_dir, data):
 
     if data is not None:
         bids_dataset = get_bids_dataset(bids_dataset, data, subject_label)
@@ -129,7 +134,8 @@ def is_valid_file(parser, arg):
         return open(arg, 'r')
 
 def get_subject_from_fn(filename):
-    return filename.split('-')[-1][:-4]
+    if filename.endswith(".tar"): return filename.split('-')[-1][:-4]
+    return filename
 
 def main():
 
@@ -147,6 +153,7 @@ def main():
     bids_dataset = args.bids_dataset
     output_dir = args.output_dir
     skipped_subjects = args.skip_subjects.read().split() if args.skip_subjects else []
+    is_tar = args.tar
     
     do_group_analysis = supports_group_analysis(boutiques_descriptor) and not args.skip_group
     do_group_string = "YES" if do_group_analysis else "NO"
@@ -158,20 +165,12 @@ def main():
     conf = SparkConf().setAppName("BIDS pipeline")
     sc = SparkContext(conf=conf)
 
-    mapped = None
 
-    if args.tar:
-        # RDD creation from BIDS dataset
-        rdd = create_subject_RDD(bids_dataset, sc)
-        # Participant analysis (done for all apps)
-        mapped = rdd.filter(lambda x: get_subject_from_fn(x[0])  not in skipped_subjects)\
-                    .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, get_subject_from_fn(x[0]), output_dir, x[1]))
-    else:
-        # RDD creation from BIDS dataset
-        rdd = create_RDD(bids_dataset,sc)
-        # Participant analysis (done for all apps)
-        mapped = rdd.filter(lambda x: x not in skipped_subjects)\
-                .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, x, output_dir))
+    # RDD creation from BIDS dataset
+    rdd = create_RDD(bids_dataset, sc, is_tar)
+    # Participant analysis (done for all apps)
+    mapped = rdd.filter(lambda x: get_subject_from_fn(x[0])  not in skipped_subjects)\
+                .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, get_subject_from_fn(x[0]), output_dir, x[1]))
 
 
     for result in mapped.collect():
