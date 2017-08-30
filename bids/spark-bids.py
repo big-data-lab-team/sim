@@ -38,14 +38,6 @@ def create_subject_RDD(bids_dataset_root, sc, sub_dir='tar_subjects'):
     return sc.binaryFiles("tar_subjects")
 
 
-def list_files_by_subject(bids_dataset, subject_label):
-    array = []
-    for root, dirs, files in os.walk(bids_dataset):
-      for file in files:
-        if file.startswith("sub-{0}".format(subject_label)):
-          array.append(file)
-    return array
-
 def pretty_print(result):
     label, log, returncode = result
     if returncode == 0:
@@ -95,7 +87,7 @@ def get_bids_dataset(data, subject_label):
 
     os.remove(filename)
 
-    return subject_label
+    return foldername
     
 
 def run_subject_analysis(boutiques_descriptor, data, subject_label, output_dir):
@@ -119,7 +111,12 @@ def bosh_exec(boutiques_descriptor, invocation_file, label):
     except subprocess.CalledProcessError as e:
         result = (label, e.output, e.returncode)
     os.remove(invocation_file)
-    shutil.rmtree(label)
+
+    try:
+        shutil.rmtree(label)
+    except:
+        pass
+
     return result
 
 def is_valid_file(parser, arg):
@@ -144,12 +141,12 @@ def main():
     boutiques_descriptor = os.path.join(os.path.abspath(args.bids_app_boutiques_descriptor))
     bids_dataset = args.bids_dataset
     output_dir = args.output_dir
-    skipped_subjects = args.skip_subjects.read().split() if args.skip_subjects else ""
+    skipped_subjects = args.skip_subjects.read().split() if args.skip_subjects else []
     
     do_group_analysis = supports_group_analysis(boutiques_descriptor) and not args.skip_group
     do_group_string = "YES" if do_group_analysis else "NO"
     print("Computed Analyses: Subject [ YES ] - Group [ {0} ]".format(do_group_string))
-    if skipped_subjects:
+    if len(skipped_subjects):
         print("Skipped subjects: {0}".format(skipped_subjects)) 
     
     # Spark initialization
