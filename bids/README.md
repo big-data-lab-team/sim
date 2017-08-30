@@ -5,4 +5,4 @@
 
 # Usage
 
-* `./bids-pipeline.py ./ds001` (dataset has to be in PWD)
+* `./spark-bids.py ./ds001` (dataset has to be in PWD)
