@@ -37,7 +37,7 @@ def pretty_print(result):
         with open(filename,"w") as f:
             f.write(log)
         f.close()
-        print(" [ ERROR ({0}) ] {1} - {3}".format(returncode, label, filename))
+        print(" [ ERROR ({0}) ] {1} - {2}".format(returncode, label, filename))
 
 def write_invocation_file(bids_dataset, output_dir, analysis_level, subject_label, invocation_file):
 
@@ -101,12 +101,12 @@ def main():
     boutiques_descriptor = os.path.join(os.path.abspath(args.bids_app_boutiques_descriptor))
     bids_dataset = args.bids_dataset
     output_dir = args.output_dir
-    skipped_subjects = args.skip_subjects.read().split() if args.skip_subjects else None
+    skipped_subjects = args.skip_subjects.read().split() if args.skip_subjects else []
     
     do_group_analysis = supports_group_analysis(boutiques_descriptor) and not args.skip_group
     do_group_string = "YES" if do_group_analysis else "NO"
     print("Computed Analyses: Subject [ YES ] - Group [ {0} ]".format(do_group_string))
-    if skipped_subjects:
+    if len(skipped_subjects):
         print("Skipped subjects: {0}".format(skipped_subjects)) 
     
     # Spark initialization
