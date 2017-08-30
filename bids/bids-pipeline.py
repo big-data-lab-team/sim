@@ -38,7 +38,6 @@ def write_invocation_file(bids_dataset, output_dir, participant_name, invocation
     # Writes invocation
     with open(invocation_file,"w") as f:
         f.write(json_invocation)
-        f.close()
 
 def run_bids_app(bids_dataset, participant_name):
     
@@ -53,7 +52,7 @@ def run_bids_app(bids_dataset, participant_name):
     invocation_file = "./invocation-{0}.json".format(participant_name)
     write_invocation_file(bids_dataset, output_dir, participant_name, invocation_file)
     
-    run_command = "localExec.py {0} -i {1} -e".format(boutiques_descriptor, invocation_file)
+    run_command = "./localExec.py {0} -i {1} -e".format(boutiques_descriptor, invocation_file)
 
     subprocess.check_output(run_command, shell=True, stderr=subprocess.STDOUT)
     
@@ -70,9 +69,8 @@ def main():
     bids_dataset = args.bids_dataset
     
     rdd = create_RDD(bids_dataset,sc)
-    rdd.map(lambda x: list_files_by_participant(bids_dataset,x))
     
-    print(rdd.map(lambda x: list_files_by_participant(bids_dataset,x)).collect())
+    #print(rdd.map(lambda x: list_files_by_participant(bids_dataset,x)).collect())
     
 
     print(rdd.map(lambda x: run_bids_app(bids_dataset,x)).collect())
