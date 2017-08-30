@@ -8,15 +8,12 @@ spark-bids ./bids-app-example.json ./ds001 output
 
 It should produce the following output:
 
-`
+```
 Computed Analyses: Subject [ YES ] - Group [ YES ]
-
  [ SUCCESS ] sub-01
- 
  [ SUCCESS ] sub-02
- 
  [ SUCCESS ] group
-`
+```
 
 A directory named `output` should also be created with the following content:
 
