@@ -3,14 +3,35 @@
 from pyspark import SparkContext, SparkConf
 from bids.grabbids import BIDSLayout
 import argparse
-import os
+import os, errno
 import json
 import os.path as op
 import subprocess
+import tarfile
+import shutil
 
 def create_RDD(bids_dataset_root,sc):
     layout = BIDSLayout(bids_dataset_root)
     return sc.parallelize(layout.get_subjects())
+
+def create_subject_RDD(bids_dataset_root, sc, sub_dir='tar_subjects'):
+    layout = BIDSLayout(bids_dataset_root)
+
+    try:
+        os.makedirs(sub_dir)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+    
+    for sub in layout.get_subjects():
+        files = layout.get(subject=sub)
+
+        with tarfile.open("tar_subjects/sub-{0}.tar".format(sub), "w") as tar:
+            for f in files:
+                tar.add(f.filename)
+    
+    return sc.binaryFiles("tar_subjects")
+
 
 def list_files_by_participant(bids_dataset, participant_label):
     array = []
@@ -43,8 +64,30 @@ def write_invocation_file(bids_dataset, output_dir, participant_label, invocatio
     with open(invocation_file,"w") as f:
         f.write(json_invocation)
 
-def run_bids_app(boutiques_descriptor,bids_dataset, participant_label):
+def get_bids_dataset(data, subject_label):
+
+    filename = 'sub-{0}.tar'.format(subject_label)    
+    foldername = 'sub-{0}'.format(subject_label)
+
+    # Save participant byte stream to disk
+    with open(filename, 'w') as f:
+        f.write(data)
     
+    # Now extract data from tar
+    tar = tarfile.open(filename)
+    tar.extractall(path=foldername)
+    tar.close()
+
+    os.remove(filename)
+
+    return subject_label
+    
+
+def run_bids_app(boutiques_descriptor, data, participant_label):
+    
+
+    bids_dataset = get_bids_dataset(data, participant_label)
+
     # Define output dir
     output_dir = "./output-{0}".format(participant_label)
     
@@ -61,6 +104,7 @@ def run_bids_app(boutiques_descriptor,bids_dataset, participant_label):
     except subprocess.CalledProcessError as e:
         result = (participant_label, os.path.abspath(output_dir), e.output, e.returncode)
     os.remove(invocation_file)
+    shutil.rmtree('sub-{0}'.format(participant_label))
     return result
 
 def main():
@@ -77,13 +121,15 @@ def main():
     path, fil = op.split(__file__)
     boutiques_descriptor = op.join(os.path.abspath(path), "bids-app-example.json")
 
-    rdd = create_RDD(bids_dataset,sc)
+    #rdd = create_RDD(bids_dataset,sc)
+    rdd = create_subject_RDD(bids_dataset,sc)
     
+
     # Uncomment to get a list of files by subject 
     # print(rdd.map(lambda x: list_files_by_participant(bids_dataset,x)).collect())
     
     # Map step
-    mapped = rdd.map(lambda x: run_bids_app(boutiques_descriptor, bids_dataset, x))
+    mapped = rdd.map(lambda x: run_bids_app(boutiques_descriptor, x[1], x[0].split('-')[-1][:-4]))
 
     # Display results
     for (participant_label, output_path, log, returncode) in mapped.collect():
