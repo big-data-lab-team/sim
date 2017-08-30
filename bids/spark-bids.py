@@ -36,7 +36,7 @@ def create_RDD(bids_dataset_root,sc, is_tar, sub_dir='tar_participants'):
 
         return sc.binaryFiles(sub_dir)
 
-    # Create RDD of tuples containing tuples of subject names and no data    
+    # Create RDD of containing keys of subject names and no data    
     it = iter(participants)
     empty_list = [None] * len(participants)
     list_participants = zip(it, empty_list)
