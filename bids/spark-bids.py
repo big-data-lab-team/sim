@@ -140,6 +140,8 @@ def main():
     parser.add_argument("output_dir", help="Output directory.")
     parser.add_argument("--skip-group", action = 'store_true', help="Skips groups analysis.")
     parser.add_argument("--skip-subjects", metavar="FILE", type=lambda x: is_valid_file(parser, x), help="Skips subject labels in the text file.")
+    parser.add_argument("--tar", action = 'store_true', help="Creates an RDD of tarred subjects.")
+
     args=parser.parse_args()
     boutiques_descriptor = os.path.join(os.path.abspath(args.bids_app_boutiques_descriptor))
     bids_dataset = args.bids_dataset
@@ -156,21 +158,22 @@ def main():
     conf = SparkConf().setAppName("BIDS pipeline")
     sc = SparkContext(conf=conf)
 
-    # RDD creation from BIDS datast
-    rdd = create_RDD(bids_dataset,sc)
-    #rdd = create_subject_RDD(bids_dataset, sc) #create_RDD(bids_dataset,sc)
-    
+    mapped = None
 
-    # Uncomment to get a list of files by subject 
-    # print(rdd.map(lambda x: list_files_by_subject(bids_dataset,x)).collect())
-
-    # Participant analysis (done for all apps)
-    mapped = rdd.filter(lambda x: x not in skipped_subjects)\
+    if args.tar:
+        # RDD creation from BIDS dataset
+        rdd = create_subject_RDD(bids_dataset, sc)
+        # Participant analysis (done for all apps)
+        mapped = rdd.filter(lambda x: get_subject_from_fn(x[0])  not in skipped_subjects)\
+                    .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, get_subject_from_fn(x[0]), output_dir, x[1]))
+    else:
+        # RDD creation from BIDS dataset
+        rdd = create_RDD(bids_dataset,sc)
+        # Participant analysis (done for all apps)
+        mapped = rdd.filter(lambda x: x not in skipped_subjects)\
                 .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, x, output_dir))
-    #mapped = rdd.filter(lambda x: get_subject_from_fn(x[0])  not in skipped_subjects)\
-    #            .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, get_subject_from_fn(x[0]), output_dir, x[1]))
 
-    # Display results: careful: don't display results before all transformations have been applied to the RDD
+
     for result in mapped.collect():
         pretty_print(result)
 
