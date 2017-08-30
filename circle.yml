@@ -6,12 +6,16 @@ machine:
 services:
   pre:
     - docker
+
+checkout:
+  post:
+    - git checkout https://github.com/boutiques/boutiques/tree/develop/tools/python
     
 dependencies:
   override:
     - npm install bids-validator
     - gem install bundler
-    - pip install boutiques
+    - pip install -e --user git+git://github.com/boutiques/boutiques.git@develop#subdirectory=tools/python/
     - pip install pytest
 
 test:
