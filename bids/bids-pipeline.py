@@ -2,11 +2,7 @@
 
 from pyspark import SparkContext, SparkConf
 from bids.grabbids import BIDSLayout
-import argparse
-import os
-import json
-import os.path as op
-import subprocess
+import argparse, json, os, subprocess, time
 
 def create_RDD(bids_dataset_root,sc):
     layout = BIDSLayout(bids_dataset_root)
@@ -24,7 +20,12 @@ def pretty_print(participant_label, output_path, log, returncode):
     if returncode == 0:
         print(" [ SUCCESS ] subj-{0} - {1}".format(participant_label, output_path))
     else:
-        print(" [ ERROR ({0}) ] subj-{1} - {2} - {3}".format(returncode, participant_label, output_path, log))
+        timestamp = str(int(time.time() * 1000))
+        filename = "{0}.{1}.err".format(timestamp,participant_label)
+        with open(filename,"w") as f:
+            f.write(log)
+        f.close()
+        print(" [ ERROR ({0}) ] subj-{1} - {2} - {3}".format(returncode, participant_label, output_path, filename))
 
 def write_invocation_file(bids_dataset, output_dir, participant_label, invocation_file):
 
@@ -65,19 +66,20 @@ def run_bids_app(boutiques_descriptor,bids_dataset, participant_label):
     return result
 
 def main():
+
+    # Arguments parsing
+    parser=argparse.ArgumentParser()
+    parser.add_argument("bids_dataset", help="BIDS dataset to be processed")
+    parser.add_argument("bids_app_boutiques_descriptor", help="Boutiques descriptor of the BIDS App that will process the dataset")
+    args=parser.parse_args()
+    bids_dataset = args.bids_dataset
+    boutiques_descriptor = os.path.join(os.path.abspath(args.bids_app_boutiques_descriptor))
+
     # Spark initialization
     conf = SparkConf().setAppName("BIDS pipeline")
     sc = SparkContext(conf=conf)
-    
-    parser=argparse.ArgumentParser()
-    parser.add_argument("bids_dataset", help="BIDS dataset to be processed")
-    args=parser.parse_args()
-    bids_dataset = args.bids_dataset
 
-    # TODO: put the descriptor as argument
-    path, fil = op.split(__file__)
-    boutiques_descriptor = op.join(os.path.abspath(path), "bids-app-example.json")
-
+    # RDD creation from BIDS datast
     rdd = create_RDD(bids_dataset,sc)
     
     # Uncomment to get a list of files by subject 
