@@ -78,8 +78,9 @@ def main():
     path, fil = op.split(__file__)
     boutiques_descriptor = op.join(os.path.abspath(path), "bids-app-example.json")
 
+    rdd = create_RDD(bids_dataset,sc)
+    
     # Uncomment to get a list of files by subject 
-    # rdd = create_RDD(bids_dataset,sc)
     # rdd.map(lambda x: list_files_by_participant(bids_dataset,x))
     # print(rdd.map(lambda x: list_files_by_participant(bids_dataset,x)).collect())
     
