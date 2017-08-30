@@ -10,8 +10,11 @@ It should produce the following output:
 
 `
 Computed Analyses: Subject [ YES ] - Group [ YES ]
- [ SUCCESS ] sub-01                                                             
+
+ [ SUCCESS ] sub-01
+ 
  [ SUCCESS ] sub-02
+ 
  [ SUCCESS ] group
 `
 
