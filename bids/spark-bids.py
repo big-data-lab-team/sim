@@ -91,9 +91,11 @@ def get_bids_dataset(bids_dataset, data, subject_label):
     return os.path.join(tmp_dataset, os.path.abspath(bids_dataset))
     
 
-def run_subject_analysis(boutiques_descriptor, bids_dataset, data, subject_label, output_dir):
+def run_subject_analysis(boutiques_descriptor, bids_dataset, subject_label, output_dir, data=None):
 
-    bids_dataset = get_bids_dataset(bids_dataset, data, subject_label)
+    if data is not None:
+        bids_dataset = get_bids_dataset(bids_dataset, data, subject_label)
+
     invocation_file = "./invocation-{0}.json".format(subject_label)
     write_invocation_file(bids_dataset, output_dir, "participant", subject_label, invocation_file)
     return bosh_exec(boutiques_descriptor, invocation_file, "sub-{0}".format(subject_label))
@@ -155,15 +157,18 @@ def main():
     sc = SparkContext(conf=conf)
 
     # RDD creation from BIDS datast
-    rdd = create_subject_RDD(bids_dataset, sc) #create_RDD(bids_dataset,sc)
+    rdd = create_RDD(bids_dataset,sc)
+    #rdd = create_subject_RDD(bids_dataset, sc) #create_RDD(bids_dataset,sc)
     
 
     # Uncomment to get a list of files by subject 
     # print(rdd.map(lambda x: list_files_by_subject(bids_dataset,x)).collect())
 
     # Participant analysis (done for all apps)
-    mapped = rdd.filter(lambda x: get_subject_from_fn(x[0])  not in skipped_subjects)\
-                .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, x[1], get_subject_from_fn(x[0]), output_dir))
+    mapped = rdd.filter(lambda x: x not in skipped_subjects)\
+                .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, x, output_dir))
+    #mapped = rdd.filter(lambda x: get_subject_from_fn(x[0])  not in skipped_subjects)\
+    #            .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, get_subject_from_fn(x[0]), output_dir, x[1]))
 
     # Display results: careful: don't display results before all transformations have been applied to the RDD
     for result in mapped.collect():
