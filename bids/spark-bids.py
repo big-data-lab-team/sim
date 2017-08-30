@@ -124,14 +124,14 @@ def main():
     mapped = rdd.filter(lambda x: x not in skipped_subjects)\
                 .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, x, output_dir))
 
+    # Display results: careful: don't display results before all transformations have been applied to the RDD
+    for result in mapped.collect():
+        pretty_print(result)
+
     # Group analysis
     if do_group_analysis:
         group_result = run_group_analysis(boutiques_descriptor, bids_dataset, output_dir)
-    
-    # Display results
-    for result in mapped.collect():
-        pretty_print(result)
-    pretty_print(group_result)
+        pretty_print(group_result)
         
 # Execute program
 if  __name__ == "__main__":
