@@ -135,25 +135,47 @@ def main():
 
     # Arguments parsing
     parser=argparse.ArgumentParser()
+    # Required inputs
     parser.add_argument("bids_app_boutiques_descriptor", help="Boutiques descriptor of the BIDS App that will process the dataset.")
     parser.add_argument("bids_dataset", help="BIDS dataset to be processed.")
     parser.add_argument("output_dir", help="Output directory.")
-    parser.add_argument("--skip-group", action = 'store_true', help="Skips groups analysis.")
+    # Optional inputs
+    # Analysis options
+    parser.add_argument("--skip-session-analysis", action = 'store_true', help="Skips session analysis.")
+    parser.add_argument("--skip-participant-analysis", action = 'store_true', help="Skips participant analysis.")
+    parser.add_argument("--skip-group-analysis", action = 'store_true', help="Skips groups analysis.")
     parser.add_argument("--skip-participants", metavar="FILE", type=lambda x: is_valid_file(parser, x), help="Skips participant labels in the text file.")
+    parser.add_argument("--skip-sessions", metavar="FILE", type=lambda x: is_valid_file(parser, x), help="Skips session labels in the text file, for all participants.")
+    # Performance options
     parser.add_argument("--tar", action = 'store_true', help="Creates an RDD of tarred participants.")
-
     args=parser.parse_args()
+
+    # Required inputs
     boutiques_descriptor = os.path.join(os.path.abspath(args.bids_app_boutiques_descriptor))
     bids_dataset = args.bids_dataset
     output_dir = args.output_dir
-    skipped_participants = args.skip_participants.read().split() if args.skip_participants else []
+
+    # Optional inputs
+    do_subject_analysis = supports_analysis_level(boutiques_descriptor, "session") and not args.skip_session_analysis
+    do_participant_analysis = supports_analysis_level(boutiques_descriptor, "participant") and not args.skip_participant_analysis
+    do_group_analysis = supports_analysis_level(boutiques_descriptor,"group") and not args.skip_group_analysis
     
-    do_group_analysis = supports_analysis_level(boutiques_descriptor,"group") and not args.skip_group
-    do_group_string = "YES" if do_group_analysis else "NO"
-    print("Computed Analyses: Participant [ YES ] - Group [ {0} ]".format(do_group_string))
+    skipped_participants = args.skip_participants.read().split() if args.skip_participants else []
+    skipped_sessions = args.skip_sessions.read().split() if args.skip_sessions else []
+
+    # Print analysis summary
+    print("Computed Analyses: Session [ {0} ] - Participant [ {1} ] - Group [ {2} ]".format(str(do_subject_analysis).upper(),
+                                                                                            str(do_participant_analysis).upper(),
+                                                                                            str(do_group_analysis).upper()))
+    if len(skipped_sessions):
+        print("Skipped sessions: {0}".format(skipped_sessions)) 
     if len(skipped_participants):
         print("Skipped participants: {0}".format(skipped_participants)) 
-    
+
+    # Return if there is nothing to do
+    if not ( do_subject_analysis or do_participant_analysis or do_group_analysis ):
+        sys.exit(0)
+        
     # Spark initialization
     conf = SparkConf().setAppName("BIDS pipeline")
     sc = SparkContext(conf=conf)
