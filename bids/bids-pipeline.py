@@ -3,13 +3,19 @@
 from pyspark import SparkContext, SparkConf
 from bids.grabbids import BIDSLayout
 import argparse
+import os
 
 def create_RDD(bids_dataset_root,sc):
     layout = BIDSLayout(bids_dataset_root)
     return sc.parallelize(layout.get_subjects())
 
 def list_files_by_participant(bids_dataset, participant_name):
-    array = find bids_dataset/sub-participant_name -type f
+    array = []
+    os.chdir(bids_dataset)
+    for root, dirs, files in os.walk(bids_dataset):
+       for file in files:
+          if file.startswith("sub-{0}".format(participant_name)):
+             array.append(file)
     return array
 
 def main():
@@ -23,7 +29,7 @@ def main():
     bids_dataset = args.bids_dataset
     
     rdd = create_RDD(bids_dataset,sc)
-    rdd.map(lambda x: list_files_by_participant(bids_dataset,x))
+    rdd = rdd.map(lambda x: list_files_by_participant(bids_dataset,x))
     
     print(rdd.collect())
     
