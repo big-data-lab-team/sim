@@ -48,7 +48,7 @@ def write_invocation_file(bids_dataset, output_dir, subject_label, invocation_fi
     invocation["inputs"].append({"bids_dir": bids_dataset})
     invocation["inputs"].append({"output_dir_name": output_dir})
     invocation["inputs"].append({"analysis_level": "subject"})
-    invocation["inputs"].append({"subject_label": subject_label})
+    invocation["inputs"].append({"participant_label": subject_label})
     json_invocation = json.dumps(invocation)
 
     # Writes invocation
