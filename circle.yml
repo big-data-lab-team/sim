@@ -11,9 +11,9 @@ dependencies:
   override:
     - npm install bids-validator
     - gem install bundler
-    - pip333 install git+git://github.com/boutiques/boutiques.git@develop#subdirectory=tools/python/
+    - pip3 install git+git://github.com/boutiques/boutiques.git@develop#subdirectory=tools/python/
     - pip install pytest
 
 test:
   override:
-    - bosh-validate bids/demo/bids-app-example.json 
+    - bosh-validate bids/demo/bids-app-example.json
