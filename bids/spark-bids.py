@@ -2,7 +2,7 @@
 
 from pyspark import SparkContext, SparkConf
 from bids.grabbids import BIDSLayout
-import argparse, json, os, subprocess, time
+import argparse, json, os, errno, subprocess, time, tarfile, shutil
 
 def supports_group_analysis(boutiques_descriptor):
     desc = json.load(open(boutiques_descriptor))
@@ -19,13 +19,24 @@ def create_RDD(bids_dataset_root,sc):
     layout = BIDSLayout(bids_dataset_root)
     return sc.parallelize(layout.get_subjects())
 
-def list_files_by_subject(bids_dataset, subject_label):
-    array = []
-    for root, dirs, files in os.walk(bids_dataset):
-      for file in files:
-        if file.startswith("sub-{0}".format(subject_label)):
-          array.append(file)
-    return array
+def create_subject_RDD(bids_dataset_root, sc, sub_dir='tar_subjects'):
+    layout = BIDSLayout(bids_dataset_root)
+
+    try:
+        os.makedirs(sub_dir)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+    
+    for sub in layout.get_subjects():
+        files = layout.get(subject=sub)
+
+        with tarfile.open("tar_subjects/sub-{0}.tar".format(sub), "w") as tar:
+            for f in files:
+                tar.add(f.filename)
+    
+    return sc.binaryFiles("tar_subjects")
+
 
 def pretty_print(result):
     label, log, returncode = result
@@ -59,9 +70,29 @@ def write_invocation_file(bids_dataset, output_dir, analysis_level, subject_labe
     # Writes invocation
     with open(invocation_file,"w") as f:
         f.write(json_invocation)
-        f.close()
 
-def run_subject_analysis(boutiques_descriptor, bids_dataset, subject_label, output_dir):
+def get_bids_dataset(data, subject_label):
+
+    filename = 'sub-{0}.tar'.format(subject_label)    
+    foldername = 'sub-{0}'.format(subject_label)
+
+    # Save participant byte stream to disk
+    with open(filename, 'w') as f:
+        f.write(data)
+
+    # Now extract data from tar
+    tar = tarfile.open(filename)
+    tar.extractall(path=foldername)
+    tar.close()
+
+    os.remove(filename)
+
+    return foldername
+    
+
+def run_subject_analysis(boutiques_descriptor, data, subject_label, output_dir):
+
+    bids_dataset = get_bids_dataset(data, subject_label)
     invocation_file = "./invocation-{0}.json".format(subject_label)
     write_invocation_file(bids_dataset, output_dir, "participant", subject_label, invocation_file)
     return bosh_exec(boutiques_descriptor, invocation_file, "sub-{0}".format(subject_label))
@@ -80,6 +111,12 @@ def bosh_exec(boutiques_descriptor, invocation_file, label):
     except subprocess.CalledProcessError as e:
         result = (label, e.output, e.returncode)
     os.remove(invocation_file)
+
+    try:
+        shutil.rmtree(label)
+    except:
+        pass
+
     return result
 
 def is_valid_file(parser, arg):
@@ -87,6 +124,9 @@ def is_valid_file(parser, arg):
         parser.error("The file %s does not exist!" % arg)
     else:
         return open(arg, 'r')
+
+def get_subject_from_fn(filename):
+    return filename.split('-')[-1][:-4]
 
 def main():
 
@@ -114,15 +154,15 @@ def main():
     sc = SparkContext(conf=conf)
 
     # RDD creation from BIDS datast
-    rdd = create_RDD(bids_dataset,sc)
+    rdd = create_subject_RDD(bids_dataset, sc) #create_RDD(bids_dataset,sc)
     
+
     # Uncomment to get a list of files by subject 
-    # rdd.map(lambda x: list_files_by_subject(bids_dataset,x))
     # print(rdd.map(lambda x: list_files_by_subject(bids_dataset,x)).collect())
 
     # Participant analysis (done for all apps)
-    mapped = rdd.filter(lambda x: x not in skipped_subjects)\
-                .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, x, output_dir))
+    mapped = rdd.filter(lambda x: get_subject_from_fn(x[0])  not in skipped_subjects)\
+                .map(lambda x: run_subject_analysis(boutiques_descriptor, x[1], get_subject_from_fn(x[0]), output_dir))
 
     # Display results: careful: don't display results before all transformations have been applied to the RDD
     for result in mapped.collect():
