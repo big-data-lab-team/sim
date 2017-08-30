@@ -31,11 +31,11 @@ def create_subject_RDD(bids_dataset_root, sc, sub_dir='tar_subjects'):
     for sub in layout.get_subjects():
         files = layout.get(subject=sub)
 
-        with tarfile.open("tar_subjects/sub-{0}.tar".format(sub), "w") as tar:
+        with tarfile.open(os.path.join(sub_dir, "sub-{0}.tar".format(sub)), "w") as tar:
             for f in files:
                 tar.add(f.filename)
     
-    return sc.binaryFiles("tar_subjects")
+    return sc.binaryFiles(sub_dir)
 
 
 def pretty_print(result):
@@ -71,12 +71,13 @@ def write_invocation_file(bids_dataset, output_dir, analysis_level, subject_labe
     with open(invocation_file,"w") as f:
         f.write(json_invocation)
 
-def get_bids_dataset(data, subject_label):
+def get_bids_dataset(bids_dataset, data, subject_label):
 
-    filename = 'sub-{0}.tar'.format(subject_label)    
-    foldername = 'sub-{0}'.format(subject_label)
+    filename = 'sub-{0}.tar'.format(subject_label)
+    tmp_dataset = 'temp_dataset'    
+    foldername = os.path.join(tmp_dataset, 'sub-{0}'.format(subject_label))
 
-    # Save participant byte stream to disk
+    # Save subject byte stream to disk
     with open(filename, 'w') as f:
         f.write(data)
 
@@ -87,12 +88,12 @@ def get_bids_dataset(data, subject_label):
 
     os.remove(filename)
 
-    return foldername
+    return os.path.join(tmp_dataset, os.path.abspath(bids_dataset))
     
 
-def run_subject_analysis(boutiques_descriptor, data, subject_label, output_dir):
+def run_subject_analysis(boutiques_descriptor, bids_dataset, data, subject_label, output_dir):
 
-    bids_dataset = get_bids_dataset(data, subject_label)
+    bids_dataset = get_bids_dataset(bids_dataset, data, subject_label)
     invocation_file = "./invocation-{0}.json".format(subject_label)
     write_invocation_file(bids_dataset, output_dir, "participant", subject_label, invocation_file)
     return bosh_exec(boutiques_descriptor, invocation_file, "sub-{0}".format(subject_label))
@@ -110,7 +111,7 @@ def bosh_exec(boutiques_descriptor, invocation_file, label):
         result = (label, log, 0)
     except subprocess.CalledProcessError as e:
         result = (label, e.output, e.returncode)
-    os.remove(invocation_file)
+    #os.remove(invocation_file)
 
     try:
         shutil.rmtree(label)
@@ -162,7 +163,7 @@ def main():
 
     # Participant analysis (done for all apps)
     mapped = rdd.filter(lambda x: get_subject_from_fn(x[0])  not in skipped_subjects)\
-                .map(lambda x: run_subject_analysis(boutiques_descriptor, x[1], get_subject_from_fn(x[0]), output_dir))
+                .map(lambda x: run_subject_analysis(boutiques_descriptor, bids_dataset, x[1], get_subject_from_fn(x[0]), output_dir))
 
     # Display results: careful: don't display results before all transformations have been applied to the RDD
     for result in mapped.collect():
