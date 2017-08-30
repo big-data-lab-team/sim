@@ -10,7 +10,6 @@ It should produce the following output:
 
 `
 Computed Analyses: Subject [ YES ] - Group [ YES ]
-Setting default log level to "WARN".
  [ SUCCESS ] sub-01                                                             
  [ SUCCESS ] sub-02
  [ SUCCESS ] group
