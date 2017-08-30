@@ -15,24 +15,18 @@ def supports_analysis_level(boutiques_descriptor, level):
     assert(analysis_level_input.get("value-choices")),"Input 'analysis_level' of BIDS app descriptor has no 'value-choices' property"   
     return level in analysis_level_input["value-choices"]
 
-def create_RDD(bids_dataset_root,sc, is_tar, sub_dir='tar_participants'):
+def create_RDD(bids_dataset_root, sc, use_hdfs):
+
+    sub_dir="file://"+os.path.abspath('tar_files')
+    
     layout = BIDSLayout(bids_dataset_root)
     participants = layout.get_subjects()    
-
+    
     # Create RDD of file paths as key and tarred subject data as value
-    if is_tar:
-        try:
-            os.makedirs(sub_dir)
-        except OSError as e:
-            if e.errno != errno.EEXIST:
-                raise
-        
+    if use_hdfs:
         for sub in participants:
-            files = layout.get(subject=sub)
-            
-            with tarfile.open(os.path.join(sub_dir, "sub-{0}.tar".format(sub)), "w") as tar:
-                for f in files:
-                    tar.add(f.filename)
+            layout.get(subject=sub)
+            create_tar_file(sub_dir, "sub-{0}.tar".format(sub), layout.files)
 
         return sc.binaryFiles(sub_dir)
 
@@ -43,9 +37,18 @@ def create_RDD(bids_dataset_root,sc, is_tar, sub_dir='tar_participants'):
 
     return sc.parallelize(list_participants)
 
+def create_tar_file(out_dir, tar_name, files):
+    try:
+        os.makedirs(out_dir)
+    except OSError as e:
+        if e.errno != errno.EEXIST:
+            raise
+    with tarfile.open(os.path.join(out_dir, tar_name), "w") as tar:
+        for f in files:
+            tar.add(f)
 
 def pretty_print(result):
-    label, log, returncode = result
+    (label, (log, returncode)) = result
     if returncode == 0:
         print(" [ SUCCESS ] {0}".format(label))
     else:
@@ -99,27 +102,39 @@ def get_bids_dataset(bids_dataset, data, participant_label):
 
 def run_participant_analysis(boutiques_descriptor, bids_dataset, participant_label, output_dir, data):
 
-    if data is not None:
+    if data is not None: # HDFS
         bids_dataset = get_bids_dataset(bids_dataset, data, participant_label)
 
+    try:
+        os.mkdir(output_dir)
+    except OSError as exc: 
+        if exc.errno == errno.EEXIST and os.path.isdir(output_dir):
+            pass
+        else:
+            raise
+            
     invocation_file = "./invocation-{0}.json".format(participant_label)
     write_invocation_file(bids_dataset, output_dir, "participant", participant_label, invocation_file)
-    return bosh_exec(boutiques_descriptor, invocation_file, "sub-{0}".format(participant_label))
+
+    exec_result = bosh_exec(boutiques_descriptor, invocation_file)
+    
+    return (participant_label, exec_result)
 
 def run_group_analysis(boutiques_descriptor, bids_dataset, output_dir):
     invocation_file = "./invocation-group.json"
     write_invocation_file(bids_dataset, output_dir, "group", None, invocation_file)
-    return bosh_exec(boutiques_descriptor, invocation_file, "group")
+    exec_result = bosh_exec(boutiques_descriptor, invocation_file)
+    return ("group", exec_result)
 
-def bosh_exec(boutiques_descriptor, invocation_file, label):
+def bosh_exec(boutiques_descriptor, invocation_file):
     run_command = "localExec.py {0} -i {1} -e -d".format(boutiques_descriptor, invocation_file)
     result = None
     try:
         log = subprocess.check_output(run_command, shell=True, stderr=subprocess.STDOUT)
-        result = (label, log, 0)
+        result = (log, 0)
     except subprocess.CalledProcessError as e:
-        result = (label, e.output, e.returncode)
-    #os.remove(invocation_file)
+        result = (e.output, e.returncode)
+    os.remove(invocation_file)
 
     try:
         shutil.rmtree(label)
@@ -154,14 +169,14 @@ def main():
     parser.add_argument("--skip-participants", metavar="FILE", type=lambda x: is_valid_file(parser, x), help="Skips participant labels in the text file.")
     parser.add_argument("--skip-sessions", metavar="FILE", type=lambda x: is_valid_file(parser, x), help="Skips session labels in the text file, for all participants.")
     # Performance options
-    parser.add_argument("--tar", action = 'store_true', help="Creates an RDD of tarred participants.")
+    parser.add_argument("--hdfs", action = 'store_true', help="Passes data by value rather than by reference in the pipeline. Use it with HDFS only.")
     args=parser.parse_args()
 
     # Required inputs
     boutiques_descriptor = os.path.join(os.path.abspath(args.bids_app_boutiques_descriptor))
     bids_dataset = args.bids_dataset
     output_dir = args.output_dir
-    is_tar = args.tar
+    use_hdfs = args.hdfs
 
     # Optional inputs
     do_subject_analysis = supports_analysis_level(boutiques_descriptor, "session") and not args.skip_session_analysis
@@ -188,13 +203,17 @@ def main():
     conf = SparkConf().setAppName("BIDS pipeline")
     sc = SparkContext(conf=conf)
 
-
     # RDD creation from BIDS dataset
-    rdd = create_RDD(bids_dataset, sc, is_tar)
+    rdd = create_RDD(bids_dataset, sc, use_hdfs)
+    # rdd[0] is the participant label, rdd[1] is the data (if HDFS) or None
+    
     # Participant analysis (done for all apps)
     mapped = rdd.filter(lambda x: get_participant_from_fn(x[0]) not in skipped_participants)\
-                .map(lambda x: run_participant_analysis(boutiques_descriptor, bids_dataset, get_participant_from_fn(x[0]), output_dir, x[1]))
-
+                .map(lambda x: run_participant_analysis(boutiques_descriptor,
+                                                        bids_dataset,
+                                                        get_participant_from_fn(x[0]),
+                                                        output_dir,
+                                                        x[1]))
 
     for result in mapped.collect():
         pretty_print(result)
