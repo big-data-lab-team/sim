@@ -7,8 +7,8 @@ A set of Spark MapReduce programs to process brain images (large datasets and/or
 ## Installation
 
 Dependencies:
-* (Apache Spark pre-buit for Hadoop)[http://spark.apache.org/downloads.html]
-* (Docker)[http://www.docker.com] (for BIDS apps)
+* [Apache Spark pre-buit for Hadoop](http://spark.apache.org/downloads.html)
+* [Docker](http://www.docker.com) (for BIDS apps)
 
 Install the Python package:
 * `pip install simtools`
