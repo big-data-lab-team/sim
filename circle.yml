@@ -3,8 +3,7 @@ machine:
     - sudo curl -L -o /usr/bin/docker 'https://s3-external-1.amazonaws.com/circle-downloads/docker-1.9.1-circleci'
     - sudo chmod 0755 /usr/bin/docker
 
-services:
-  pre:
+  services:
     - docker
  
 dependencies:
@@ -12,10 +11,17 @@ dependencies:
     - pip install --upgrade pip
     - npm install -g bids-validator
     - gem install bundler
-    - pip install boutiques
-    - pip install pytest
+    - docker pull sequenceiq/spark:1.6.0
 
 test:
   override:
     - bosh-validate demo/bids-app-example.json
     - bids-validator demo/ds001 
+    - docker run --rm -v $PWD:/sim -it sequenceiq/spark:1.6.0 bash
+    - yum install python-pip
+    - pip install boutiques
+    - pip install pytest
+    - cd $HADOOP_PREFIX
+    - bin/hdfs dfs -copyFromLocal /sim/demo/ds001 /
+    - python/spark-bids.py demo/bids-app-example.json /ds001 output
+    - exit 
