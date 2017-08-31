@@ -17,5 +17,5 @@ dependencies:
 
 test:
   override:
-    - bosh-validate bids/demo/bids-app-example.json
-    - bids-validator bids/demo/ds001 
+    - bosh-validate demo/bids-app-example.json
+    - bids-validator demo/ds001 

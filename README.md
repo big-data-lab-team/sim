@@ -1,10 +1,51 @@
+[![CircleCI](https://circleci.com/gh/big-data-lab-team/sim/tree/master.svg?style=svg)](https://circleci.com/gh/big-data-lab-team/sim/tree/master)
+
 # Spark for neuroIMaging (sim)
+
 A set of Spark MapReduce programs to process brain images (large datasets and/or large images)
 
-Currently contains simple examples using Spark:
+## Installation
+
+### Dependencies
+
+* `pip install pybids`
+* `pip install boutiques`
+
+## Spark BIDS
+
+Spark BIDS is a tool to process BIDS datasets with BIDS apps on a
+Spark cluster, leveraging the "Map Reduce" model built in BIDS
+apps. It supports participant and group analyses.
+
+## Demo
+
+To run the demo:
+```
+spark-bids ./bids/demo/bids-app-example.json ./bids/demo/ds001 output
+```
+
+It should produce the following output:
+```
+Computed Analyses: Subject [ YES ] - Group [ YES ]
+ [ SUCCESS ] sub-01
+ [ SUCCESS ] sub-02
+ [ SUCCESS ] group
+```
+
+A directory named `output` should also be created with the following content:
+```
+avg_brain_size.txt  sub-01_brain.nii.gz  sub-02_brain.nii.gz
+```
+
+The content of `avg_brain_size.txt` should be:
+```
+Average brain size is 830532 voxels
+```
+
+## Other examples
+
+Other examples of Spark pipelines to process brain images are found in `other-examples`:
    - gen_histo.py  - histogram generation
    - bin_fsl.py - image binarization example using FSL installation in Docker container
    - bin_spark.py - image binarization without containerization. Testing difference between in-memory computing and writing to disk at each pipeline step  
-
-
 
