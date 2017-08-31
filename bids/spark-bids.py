@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 
 from pyspark import SparkContext, SparkConf
-from bids.grabbids import BIDSLayout
 import argparse, json, os, errno, subprocess, time, tarfile, shutil
+import sys
+sys.path.append('/Users/vhs/Documents/bigdata/pybids/bids/grabbids/')
+from bids_layout import BIDSLayout
+from hdfs import Config
 
 def supports_analysis_level(boutiques_descriptor, level):
     desc = json.load(open(boutiques_descriptor))
@@ -19,25 +22,25 @@ def create_RDD(bids_dataset_root, sc, use_hdfs):
 
     sub_dir="file://"+os.path.abspath('tar_files')
     
-    layout = BIDSLayout(bids_dataset_root)
+    layout = BIDSLayout(bids_dataset_root, in_hdfs=use_hdfs)
     participants = layout.get_subjects()    
     
     # Create RDD of file paths as key and tarred subject data as value
     if use_hdfs:
         for sub in participants:
             layout.get(subject=sub)
-            create_tar_file(sub_dir, "sub-{0}.tar".format(sub), layout.files)
+            create_tar_file(sub_dir, "sub-{0}.tar".format(sub), layout.files, use_hdfs)
 
         return sc.binaryFiles(sub_dir)
 
-    # Create RDD of containing keys of subject names and no data    
+    # Create RDD of containing keys of subject names and None as value    
     it = iter(participants)
     empty_list = [None] * len(participants)
     list_participants = zip(it, empty_list)
 
     return sc.parallelize(list_participants)
 
-def create_tar_file(out_dir, tar_name, files):
+def create_tar_file(out_dir, tar_name, files, source_hdfs):
     try:
         os.makedirs(out_dir)
     except OSError as e:
@@ -45,6 +48,16 @@ def create_tar_file(out_dir, tar_name, files):
             raise
     with tarfile.open(os.path.join(out_dir, tar_name), "w") as tar:
         for f in files:
+            if source_hdfs:
+                directory = "{0}{1}".format(os.getcwd(), "/".join(f.split('/')[:-1]))
+
+                if not os.path.exists(directory):
+                    os.makedirs(directory)
+
+                client = Config().get_client('dev')
+                client.download(f, directory, overwrite=True)
+                
+                f = directory
             tar.add(f)
 
 def pretty_print(result):
@@ -96,7 +109,7 @@ def get_bids_dataset(bids_dataset, data, participant_label):
     tar.close()
 
     os.remove(filename)
-
+    print(os.path.join(tmp_dataset, os.path.abspath(bids_dataset)))
     return os.path.join(tmp_dataset, os.path.abspath(bids_dataset))
     
 
