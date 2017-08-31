@@ -12,9 +12,10 @@ dependencies:
     - pip install --upgrade pip
     - npm install bids-validator
     - gem install bundler
-    - pip install --user "git+git://github.com/boutiques/boutiques.git@develop#subdirectory=tools/python/"
+    - pip install boutiques
     - pip install pytest
 
 test:
   override:
     - bosh-validate bids/demo/bids-app-example.json
+    - 
