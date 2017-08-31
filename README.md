@@ -44,7 +44,7 @@ Average brain size is 830532 voxels
 
 ## Other examples
 
-Other examples of Spark pipelines to process brain images are found in `examples`:
+Other examples of Spark pipelines to process brain images are found in `other-examples`:
    - gen_histo.py  - histogram generation
    - bin_fsl.py - image binarization example using FSL installation in Docker container
    - bin_spark.py - image binarization without containerization. Testing difference between in-memory computing and writing to disk at each pipeline step  
