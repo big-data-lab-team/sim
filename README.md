@@ -13,13 +13,11 @@ Dependencies:
 Install the Python package:
 * `pip install simtools`
 
-## Spark BIDS
+## Spark BIDS Demo
 
 Spark BIDS is a tool to process BIDS datasets with BIDS apps on a
 Spark cluster, leveraging the "Map Reduce" model built in BIDS
 apps. It supports participant and group analyses.
-
-## Demo
 
 To run the demo:
 ```
