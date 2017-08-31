@@ -6,10 +6,12 @@ A set of Spark MapReduce programs to process brain images (large datasets and/or
 
 ## Installation
 
-### Dependencies
+Dependencies:
+* (Apache Spark pre-buit for Hadoop)[http://spark.apache.org/downloads.html]
+* (Docker)[http://www.docker.com] (for BIDS apps)
 
-* `pip install pybids`
-* `pip install boutiques`
+Install the Python package:
+* `pip install simtools`
 
 ## Spark BIDS
 
@@ -21,7 +23,7 @@ apps. It supports participant and group analyses.
 
 To run the demo:
 ```
-spark-bids ./demo/bids-app-example.json ./demo/ds001 output
+spark_bids ./demo/bids-app-example.json ./demo/ds001 output
 ```
 
 It should produce the following output:

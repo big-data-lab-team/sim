@@ -1,12 +1,13 @@
 from setuptools import setup
 
-VERSION = "0.1.0"
+VERSION = "0.1.1"
 DEPS = [
     "boutiques",
     "pybids",
+    "pyspark"
 ]
 
-setup(name="sim",
+setup(name="simtools",
       version=VERSION,
       description="A set of MapReduce programs to process brain images",
       url="http://github.com/big-data-lab-team/sim",
