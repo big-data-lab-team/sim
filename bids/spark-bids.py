@@ -3,7 +3,6 @@
 from pyspark import SparkContext, SparkConf
 import argparse, json, os, errno, subprocess, time, tarfile, shutil
 import sys
-sys.path.append('/Users/vhs/Documents/bigdata/pybids/bids/grabbids/')
 from bids_layout import BIDSLayout
 from hdfs import Config
 
@@ -106,14 +105,13 @@ def get_bids_dataset(bids_dataset, data, participant_label):
     tar.close()
 
     os.remove(filename)
-    print(os.path.join(tmp_dataset, os.path.abspath(bids_dataset)))
     return os.path.join(tmp_dataset, os.path.abspath(bids_dataset))
     
 
 def run_participant_analysis(boutiques_descriptor, bids_dataset, participant_label, output_dir, data):
 
     if data is not None: # HDFS
-        bids_dataset = get_bids_dataset(bids_dataset, data, participant_label)
+        bids_dataset = get_bids_dataset(os.path.join(os.getcwd(), bids_dataset), data, participant_label)
 
     try:
         os.mkdir(output_dir)
@@ -131,6 +129,8 @@ def run_participant_analysis(boutiques_descriptor, bids_dataset, participant_lab
     return (participant_label, exec_result)
 
 def run_group_analysis(boutiques_descriptor, bids_dataset, output_dir):
+    
+
     invocation_file = "./invocation-group.json"
     write_invocation_file(bids_dataset, output_dir, "group", None, invocation_file)
     exec_result = bosh_exec(boutiques_descriptor, invocation_file)
@@ -211,6 +211,10 @@ def main():
     # RDD creation from BIDS dataset
     rdd = create_RDD(bids_dataset, sc, use_hdfs)
     # rdd[0] is the participant label, rdd[1] is the data (if HDFS) or None
+
+    # After RDD is created, everything will be stored in local FS
+    if use_hdfs:
+        bids_dataset = ".{0}".format(bids_dataset)
 
     # Participant analysis (done for all apps)
     mapped = rdd.filter(lambda x: get_participant_from_fn(x[0]) not in skipped_participants)\
