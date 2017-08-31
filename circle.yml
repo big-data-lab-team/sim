@@ -1,0 +1,21 @@
+machine:
+  pre:
+    - sudo curl -L -o /usr/bin/docker 'https://s3-external-1.amazonaws.com/circle-downloads/docker-1.9.1-circleci'
+    - sudo chmod 0755 /usr/bin/docker
+
+services:
+  pre:
+    - docker
+ 
+dependencies:
+  override:
+    - pip install --upgrade pip
+    - npm install -g bids-validator
+    - gem install bundler
+    - pip install boutiques
+    - pip install pytest
+
+test:
+  override:
+    - bosh-validate bids/demo/bids-app-example.json
+    - bids-validator bids/demo/ds001 
