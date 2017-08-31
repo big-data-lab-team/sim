@@ -1,7 +1,7 @@
 # Dependencies
 
 * `pip install pybids`
-* `pip install git+git://github.com/boutiques/boutiques.git@develop#subdirectory=tools/python`
+* `pip install boutiques`
 
 # Demo
 
