@@ -20,7 +20,7 @@ def supports_analysis_level(boutiques_descriptor, level):
 
 def create_RDD(bids_dataset_root, sc, use_hdfs):
 
-    sub_dir="file://"+os.path.abspath('tar_files')
+    sub_dir="tar_files"
     
     layout = BIDSLayout(bids_dataset_root, in_hdfs=use_hdfs)
     participants = layout.get_subjects()    
@@ -31,7 +31,7 @@ def create_RDD(bids_dataset_root, sc, use_hdfs):
             layout.get(subject=sub)
             create_tar_file(sub_dir, "sub-{0}.tar".format(sub), layout.files, use_hdfs)
 
-        return sc.binaryFiles(sub_dir)
+        return sc.binaryFiles("file://"+os.path.abspath(sub_dir))
 
     # Create RDD of containing keys of subject names and None as value    
     it = iter(participants)
@@ -62,15 +62,12 @@ def create_tar_file(out_dir, tar_name, files, source_hdfs):
 
 def pretty_print(result):
     (label, (log, returncode)) = result
-    if returncode == 0:
-        print(" [ SUCCESS ] {0}".format(label))
-    else:
-        timestamp = str(int(time.time() * 1000))
-        filename = "{0}.{1}.err".format(timestamp, label)
-        with open(filename,"w") as f:
-            f.write(log)
-        f.close()
-        print(" [ ERROR ({0}) ] {1} - {2}".format(returncode, label, filename))
+    status = "SUCCESS" if returncode == 0 else "ERROR"
+    timestamp = str(int(time.time() * 1000))
+    filename = "{0}.{1}.log".format(timestamp, label)
+    with open(filename,"w") as f:
+        f.write(log)
+    print(" [ {3} ({0}) ] {1} - {2}".format(returncode, label, filename, status))
 
 def write_invocation_file(bids_dataset, output_dir, analysis_level, participant_label, invocation_file):
 
@@ -130,24 +127,24 @@ def run_participant_analysis(boutiques_descriptor, bids_dataset, participant_lab
     write_invocation_file(bids_dataset, output_dir, "participant", participant_label, invocation_file)
 
     exec_result = bosh_exec(boutiques_descriptor, invocation_file)
-    
+    os.remove(invocation_file)
     return (participant_label, exec_result)
 
 def run_group_analysis(boutiques_descriptor, bids_dataset, output_dir):
     invocation_file = "./invocation-group.json"
     write_invocation_file(bids_dataset, output_dir, "group", None, invocation_file)
     exec_result = bosh_exec(boutiques_descriptor, invocation_file)
+    os.remove(invocation_file)
     return ("group", exec_result)
 
 def bosh_exec(boutiques_descriptor, invocation_file):
-    run_command = "localExec.py {0} -i {1} -e -d".format(boutiques_descriptor, invocation_file)
+    run_command = "bosh {0} -i {1} -e -d".format(boutiques_descriptor, invocation_file)
     result = None
     try:
         log = subprocess.check_output(run_command, shell=True, stderr=subprocess.STDOUT)
         result = (log, 0)
     except subprocess.CalledProcessError as e:
         result = (e.output, e.returncode)
-    os.remove(invocation_file)
 
     try:
         shutil.rmtree(label)
@@ -181,7 +178,7 @@ def main():
     parser.add_argument("--skip-participants", metavar="FILE", type=lambda x: is_valid_file(parser, x), help="Skips participant labels in the text file.")
 
     # Performance options
-    parser.add_argument("--hdfs", action = 'store_true', help="Passes data by value rather than by reference in the pipeline. Use it with HDFS only.")
+    parser.add_argument("--hdfs", action = 'store_true', help="Passes data by value rather than by reference in the pipeline. Use it with HDFS only. Requires HDFS to be started.")
     args=parser.parse_args()
 
     # Required inputs
@@ -214,7 +211,7 @@ def main():
     # RDD creation from BIDS dataset
     rdd = create_RDD(bids_dataset, sc, use_hdfs)
     # rdd[0] is the participant label, rdd[1] is the data (if HDFS) or None
-    
+
     # Participant analysis (done for all apps)
     mapped = rdd.filter(lambda x: get_participant_from_fn(x[0]) not in skipped_participants)\
                 .map(lambda x: run_participant_analysis(boutiques_descriptor,
