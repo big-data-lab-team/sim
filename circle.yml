@@ -10,7 +10,7 @@ services:
 dependencies:
   override:
     - pip install --upgrade pip
-    - npm install bids-validator
+    - npm install -g bids-validator
     - gem install bundler
     - pip install boutiques
     - pip install pytest
