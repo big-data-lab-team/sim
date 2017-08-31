@@ -17,11 +17,4 @@ test:
   override:
     - bosh-validate demo/bids-app-example.json
     - bids-validator demo/ds001 
-    - docker run --rm -v $PWD:/sim -it sequenceiq/spark:1.6.0 bash
-    - yum install python-pip
-    - pip install boutiques
-    - pip install pytest
-    - cd $HADOOP_PREFIX
-    - bin/hdfs dfs -copyFromLocal /sim/demo/ds001 /
-    - python/spark-bids.py demo/bids-app-example.json /ds001 output
-    - exit 
+    - docker run --rm -v $PWD:/sim sequenceiq/spark:1.6.0 bash "yum install python-pip; pip install boutiques; pip install pytest; cd $HADOOP_PREFIX; bin/hdfs dfs -copyFromLocal /sim/demo/ds001 /;python/spark-bids.py demo/bids-app-example.json /ds001 output; exit" 
