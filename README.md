@@ -6,22 +6,22 @@ A set of Spark MapReduce programs to process brain images (large datasets and/or
 
 ## Installation
 
-### Dependencies
+Dependencies:
+* [Apache Spark pre-buit for Hadoop](http://spark.apache.org/downloads.html)
+* [Docker](http://www.docker.com) (for BIDS apps)
 
-* `pip install pybids`
-* `pip install boutiques`
+Install the Python package:
+* `pip install simtools`
 
-## Spark BIDS
+## Spark BIDS Demo
 
 Spark BIDS is a tool to process BIDS datasets with BIDS apps on a
 Spark cluster, leveraging the "Map Reduce" model built in BIDS
 apps. It supports participant and group analyses.
 
-## Demo
-
 To run the demo:
 ```
-spark-bids ./demo/bids-app-example.json ./demo/ds001 output
+spark_bids ./demo/bids-app-example.json ./demo/ds001 output
 ```
 
 It should produce the following output:

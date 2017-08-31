@@ -1,3 +1,9 @@
 .\#*
 *~
 \#*
+*.log
+*.pyc
+build
+dist
+.eggs
+*.egg-info

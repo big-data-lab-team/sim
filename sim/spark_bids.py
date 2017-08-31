@@ -4,7 +4,6 @@ from pyspark import SparkContext, SparkConf
 from SparkBIDS import SparkBIDS
 import argparse
 
-
 def main():
 
     # Arguments parsing
