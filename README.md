@@ -21,7 +21,7 @@ apps. It supports participant and group analyses.
 
 To run the demo:
 ```
-spark-bids ./bids/demo/bids-app-example.json ./bids/demo/ds001 output
+spark-bids ./demo/bids-app-example.json ./demo/ds001 output
 ```
 
 It should produce the following output:
