@@ -9,6 +9,6 @@ RUN apt-get -y install npm
 
 RUN npm install -g bids-validator
 
-RUN pip install boutiques nodejs pytest simtools
+RUN pip install boutiques pytest simtools
 
 
