@@ -18,4 +18,4 @@ dependencies:
     
 test:
   override:
-    - docker run --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD simtool ./test
+    - docker run --privileged --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD simtool ./test
