@@ -22,14 +22,17 @@ class TestSim(TestCase):
                                                     ,"spark_bids.py"),
                                        self.get_json_descriptor(),
                                        os.path.join(self.get_demo_dir(),"ds001"),
-                                       "output"]
+                                       output_name]
       for option in options:
          command.append(option)
-      stdout_string = subprocess.check_output(command,
-                                      stderr=subprocess.STDOUT)
+      try:
+         stdout_string = subprocess.check_output(command,
+                                                 stderr=subprocess.STDOUT)
+      except:
+         self.assertTrue(False,"Command-line execution failed {0}".format(str(command)))
       self.assertTrue("ERROR" not in stdout_string)
-      assert(os.path.isfile("output/avg_brain_size.txt"))
-      with open(os.path.join("output","avg_brain_size.txt")) as f:
+      assert(os.path.isfile(os.path.join(output_name,"avg_brain_size.txt")))
+      with open(os.path.join(output_name,"avg_brain_size.txt")) as f:
          output_content = f.read()
       self.assertTrue(output_content == "Average brain size is 830532 voxels")
       
@@ -42,8 +45,17 @@ class TestSim(TestCase):
    def test_spark_bids_no_option(self):
       self.run_spark_bids()
 
-   def test_spark_bids_skip_group(self):
+   def test_spark_bids_separate_analyses(self):
       self.run_spark_bids(["--skip-group-analysis"]) # just participant analysis
       self.run_spark_bids(["--skip-participant-analysis"]) # just the group analysis
+
+   def test_spark_bids_skip_participant(self):
+      participant_file = "skip.txt"
+      with open(participant_file,"w") as f:
+         f.write("01")
+      self.run_spark_bids(["--skip-participants","skip.txt"])
       
+   def test_spark_bids_hdfs(self):
+      self.run_spark_bids(["--hdfs"])
+
       
