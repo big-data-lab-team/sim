@@ -6,7 +6,7 @@ RUN apt-get -y install docker.io \
 
 
 
-RUN pip install boutiques pytest
+RUN pip install boutiques pytest pyspark pybids
 
 WORKDIR "test"
 
