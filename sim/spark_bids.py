@@ -2,7 +2,13 @@
 
 from pyspark import SparkContext, SparkConf
 from SparkBIDS import SparkBIDS
-import argparse
+import argparse, os
+
+def is_valid_file(parser, arg):
+    if not os.path.exists(arg):
+        parser.error("The file %s does not exist!" % arg)
+    else:
+        return open(arg, 'r')
 
 def main():
 
