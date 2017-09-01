@@ -5,6 +5,7 @@ machine:
 
   services:
     - docker
+    - privileged: true
  
 dependencies:
   cache_directories:
@@ -17,4 +18,4 @@ dependencies:
     
 test:
   override:
-    - docker run --rm=false -it -v $PWD:$PWD -w $PWD bids/simtool ./test/test.py
+    - docker run --rm=false -it -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD bids/simtool ./test/test.py
