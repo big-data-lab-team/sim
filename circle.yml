@@ -3,19 +3,18 @@ machine:
     - sudo curl -L -o /usr/bin/docker 'https://s3-external-1.amazonaws.com/circle-downloads/docker-1.9.1-circleci'
     - sudo chmod 0755 /usr/bin/docker
 
-services:
-  pre:
+  services:
     - docker
  
 dependencies:
+  cache_directories:
+    - "~/docker"
+  
   override:
-    - pip install --upgrade pip
-    - npm install -g bids-validator
-    - gem install bundler
-    - pip install boutiques
-    - pip install pytest
-
+    - docker build -t bids/example . :
+        timeout: 21600
+    - mkdir -p ~/docker; docker save "bids/example" > ~/docker/image.tar
+    
 test:
   override:
-    - bosh-validate demo/bids-app-example.json
-    - bids-validator demo/ds001 
+    - docker run --rm=false -it -v $PWD:$PWD -w $PWD bids/example ./test/test.py
