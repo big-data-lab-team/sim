@@ -17,4 +17,4 @@ dependencies:
     
 test:
   override:
-    - docker run --rm -it -v $PWD:$PWD -w $PWD bids/example ./test/test.py
+    - docker run --rm=false -it -v $PWD:$PWD -w $PWD bids/example ./test/test.py
