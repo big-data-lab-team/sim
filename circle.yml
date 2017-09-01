@@ -13,8 +13,8 @@ dependencies:
   override:
     - docker build -t bids/example . :
         timeout: 21600
-    - mkdir -p ~/docker; docker save "bids/example" > ~/docker/image.tar
+    - mkdir -p ~/docker; docker save "bids/simtool" > ~/docker/image.tar
     
 test:
   override:
-    - docker run --rm=false -it -v $PWD:$PWD -w $PWD bids/example ./test/test.py
+    - docker run --rm=false -it -v $PWD:$PWD -w $PWD bids/simtool ./test/test.py
