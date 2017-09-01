@@ -11,10 +11,10 @@ dependencies:
     - "~/docker"
   
   override:
-    - docker build -t laletscaria/simtool . :
+    - docker build -t bids/example . :
         timeout: 21600
-    - mkdir -p ~/docker; docker save "laletscaria/simtool" > ~/docker/image.tar
+    - mkdir -p ~/docker; docker save "bids/example" > ~/docker/image.tar
     
 test:
   override:
-    - docker run --rm -it -v $PWD:$PWD -w $PWD laletscaria/simtool ./test/test.py
+    - docker run --rm -it -v $PWD:$PWD -w $PWD bids/example ./test/test.py
