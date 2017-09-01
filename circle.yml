@@ -17,4 +17,4 @@ dependencies:
     
 test:
   override:
-    - docker run --privileged --rm -it -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD laletscaria/simtool ./test/test.py
+    - docker run --rm -it -v $PWD:$PWD -w $PWD laletscaria/simtool ./test/test.py
