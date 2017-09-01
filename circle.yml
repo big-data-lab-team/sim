@@ -12,10 +12,10 @@ dependencies:
     - "~/docker"
   
   override:
-    - docker build -t bids/simtool . :
+    - docker build -t simtool . :
         timeout: 21600
-    - mkdir -p ~/docker; docker save "bids/simtool" > ~/docker/image.tar
+    - mkdir -p ~/docker; docker save "simtool" > ~/docker/image.tar
     
 test:
   override:
-    - docker run --rm=false -it -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD bids/simtool ./test/test.py
+    - docker run --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD simtool ./test
