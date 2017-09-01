@@ -5,16 +5,17 @@ machine:
 
   services:
     - docker
+    - privileged: true
  
 dependencies:
   cache_directories:
     - "~/docker"
   
   override:
-    - docker build -t bids/example . :
+    - docker build -t simtool . :
         timeout: 21600
-    - mkdir -p ~/docker; docker save "bids/example" > ~/docker/image.tar
+    - mkdir -p ~/docker; docker save "simtool" > ~/docker/image.tar
     
 test:
   override:
-    - docker run --rm=false -it -v $PWD:$PWD -w $PWD bids/example ./test
+    - docker run --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD simtool ./test

@@ -6,8 +6,6 @@ RUN apt-get -y install docker.io \
 
 
 
-RUN pip install boutiques pytest
-
-WORKDIR "test"
+RUN pip install boutiques pytest pyspark pybids
 
 ENTRYPOINT ["pytest"]
