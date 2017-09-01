@@ -11,7 +11,7 @@ dependencies:
     - "~/docker"
   
   override:
-    - docker build -t bids/example . :
+    - docker build -t bids/simtool . :
         timeout: 21600
     - mkdir -p ~/docker; docker save "bids/simtool" > ~/docker/image.tar
     
