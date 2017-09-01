@@ -2,8 +2,8 @@ import pytest
 import subprocess
 
 
-def test_bids_validator():
-    subprocess.call(["bids-validator","../demo/ds001"])
+#def test_bids_validator():
+ #   subprocess.call(["bids-validator","../demo/ds001"])
 
 def test_boutiques_validator():
    assert (subprocess.call(["bosh","../demo/bids-app-example.json"]))

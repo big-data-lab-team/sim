@@ -7,7 +7,7 @@ RUN apt-get -y install docker.io \
 
 RUN apt-get -y install npm 
 
-RUN npm install -g bids-validator
+#RUN npm install -g bids-validator
 
 RUN pip install boutiques pytest simtools
 
