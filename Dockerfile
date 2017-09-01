@@ -1,17 +1,28 @@
-FROM p7hb/docker-spark
+FROM sequenceiq/spark:1.6.0
 
-MAINTAINER https://github.com/big-data-lab-team
+RUN yum -y install wget make tar xz-libs python-pip python-wheel
 
-RUN apt-get update && \
-    apt-get install -y python3 python3-pip nodejs && \
-    pip3 install boutiques pybids pytest && \
-    apt-get remove -y python3-pip && \
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+RUN yum install -y centos-release-SCL
 
-COPY demo /root
-	
-COPY spark-bids.py /root
+RUN yum -y install epel-release && yum clean all
 
-#RUN npm install -g bids-validator
+RUN wget http://curl.haxx.se/ca/cacert.pem && \
+    mv cacert.pem ca-bundle.crt && \
+    mv ca-bundle.crt /etc/pki/tls/certs
 
+RUN wget http://www.python.org/ftp/python/2.7.6/Python-2.7.6.tar.xz && \
+    xz -d Python-2.7.6.tar.xz && \
+    tar -xvf Python-2.7.6.tar && \
+    ./Python-2.7.6/configure --prefix=/usr/local && \
+    make && \
+    make altinstall 
+#    wget https://bootstrap.pypa.io/ez_setup.py && \
+#    python2.7 ez_setup.py && \
+#    easy_install pip && \
+#    rm -rf Python-2.7.6.tar
 
+RUN pip install boutiques 
+ 
+ENV PATH="/usr/local/bin:$PATH"
+
+CMD ["/etc/bootstrap.sh","-bash"]
