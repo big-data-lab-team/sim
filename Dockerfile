@@ -22,6 +22,8 @@ RUN wget http://www.python.org/ftp/python/2.7.6/Python-2.7.6.tar.xz && \
 #    rm -rf Python-2.7.6.tar
 
 RUN pip install boutiques 
+
+RUN pip install simtools 
  
 ENV PATH="/usr/local/bin:$PATH"
 
