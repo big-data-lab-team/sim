@@ -1,14 +1,11 @@
 import os, pytest, random, subprocess, time
 from unittest import TestCase
 
-#def test_bids_validator():
- #   subprocess.call(["bids-validator","../demo/ds001"])
-
 class TestSim(TestCase):
 
    ## UTILITY METHODS
    def get_sim_dir(self):
-      return os.path.join(os.path.dirname(__file__),"../sim")
+      return os.path.join(os.path.dirname(__file__),"..")
    
    def get_demo_dir(self):
       return os.path.join(os.path.dirname(__file__),"demo")
