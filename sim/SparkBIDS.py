@@ -109,14 +109,13 @@ class SparkBIDS(object):
 
         # Creates invocation object
         invocation = {}
-        invocation["inputs"] = [ ]
-        invocation["inputs"].append({"bids_dir": self.bids_dataset})
-        invocation["inputs"].append({"output_dir_name": self.output_dir})
+        invocation["bids_dir"] = self.bids_dataset
+        invocation["output_dir_name"] = self.output_dir
         if analysis_level == "participant":
-            invocation["inputs"].append({"analysis_level": "participant"}) 
-            invocation["inputs"].append({"participant_label": participant_label})
+            invocation["analysis_level"] = "participant"
+            invocation["participant_label"] = participant_label
         elif analysis_level == "group":
-            invocation["inputs"].append({"analysis_level": "group"})
+            invocation["analysis_level"] = "group"
 
         json_invocation = json.dumps(invocation)
 
