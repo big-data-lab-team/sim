@@ -175,7 +175,7 @@ class SparkBIDS(object):
         return ("group", exec_result)
 
     def bosh_exec(self, invocation_file):
-        run_command = "bosh {0} -i {1} -e -d".format(self.boutiques_descriptor, invocation_file)
+        run_command = "bosh {0} -i {1} -e".format(self.boutiques_descriptor, invocation_file)
         result = None
         try:
             log = subprocess.check_output(run_command, shell=True, stderr=subprocess.STDOUT)
