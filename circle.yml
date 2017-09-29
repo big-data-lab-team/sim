@@ -5,16 +5,17 @@ machine:
 
   services:
     - docker
+    - privileged: true
  
 dependencies:
+  cache_directories:
+    - "~/docker"
+  
   override:
-    - pip install --upgrade pip
-    - npm install -g bids-validator
-    - gem install bundler
-    - docker pull sequenceiq/spark:1.6.0
-
+    - docker build -t simtool . :
+        timeout: 21600
+    - mkdir -p ~/docker; docker save "simtool" > ~/docker/image.tar
+    
 test:
   override:
-    - bosh-validate demo/bids-app-example.json
-    - bids-validator demo/ds001 
-    - docker run --rm -v $PWD:/sim sequenceiq/spark:1.6.0 bash "yum install python-pip; pip install boutiques; pip install pytest; cd $HADOOP_PREFIX; bin/hdfs dfs -copyFromLocal /sim/demo/ds001 /;python/spark-bids.py demo/bids-app-example.json /ds001 output; exit" 
+    - docker run --privileged --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD simtool ./test
