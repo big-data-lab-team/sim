@@ -4,28 +4,28 @@ import json, os, errno, subprocess, time, tarfile, shutil
 class SparkBIDS(object):
 
     def __init__(self, boutiques_descriptor, bids_dataset, output_dir, options={}):
-     
+
         self.boutiques_descriptor = os.path.join(os.path.abspath(boutiques_descriptor))
         self.bids_dataset = bids_dataset
         self.output_dir = output_dir
-        
+
         # Includes: use_hdfs, skip_participant_analysis,
         # skip_group_analysis, skip_participants_file
         for option in list(options.keys()): setattr(self, option, options.get(option))
 
         # Check what will have to be done
         self.do_participant_analysis = self.supports_analysis_level("participant") \
-                                                            and not self.skip_participant_analysis
+                                       and not self.skip_participant_analysis
         self.do_group_analysis = self.supports_analysis_level("group") \
-                                                 and not self.skip_group_analysis
+                                 and not self.skip_group_analysis
         self.skipped_participants = self.skip_participants_file.read().split() if self.skip_participants_file else []
 
         # Print analysis summary
         print("Computed Analyses: Participant [ {0} ] - Group [ {1} ]".format(str(self.do_participant_analysis).upper(),
                                                                               str(self.do_group_analysis).upper()))
-     
+
         if len(self.skipped_participants):
-            print("Skipped participants: {0}".format(self.skipped_participants)) 
+            print("Skipped participants: {0}".format(self.skipped_participants))
 
     def run(self, sc):
 
@@ -36,13 +36,19 @@ class SparkBIDS(object):
             # rdd[0] is the participant label, rdd[1] is the data (if HDFS) or None
 
             # Participant analysis (done for all apps)
-            mapped = rdd.filter(lambda x: self.get_participant_from_fn(x[0]) not in self.skipped_participants)\
-                        .map(lambda x: self.run_participant_analysis(self.get_participant_from_fn(x[0]),
-                                                                     x[1]))
-
+            mapped = rdd.filter(lambda x: self.get_participant_from_fn(x[0]) not in self.skipped_participants) \
+                .map(lambda x: self.run_participant_analysis(self.get_participant_from_fn(x[0]),
+                                                             x[1]))
+            self.participant_analysis_failed=False
             for result in mapped.collect():
                 self.pretty_print(result)
+                if self.check_failure(result):
+                    #Disable Group Analysis if Participant Analysis Fails
+                    self.do_group_analysis=False
+                    self.participant_analysis_failed=True
 
+        if self.participant_analysis_failed:
+            print("Error# Participant analysis failed. Aborting group analysis")
         # Group analysis
         if self.do_group_analysis:
             group_result = self.run_group_analysis()
@@ -50,24 +56,24 @@ class SparkBIDS(object):
 
     def spark_required(self):
         return self.do_participant_analysis
-            
-    def supports_analysis_level(self,level):
+
+    def supports_analysis_level(self, level):
         desc = json.load(open(self.boutiques_descriptor))
         analysis_level_input = None
         for input in desc["inputs"]:
             if input["id"] == "analysis_level":
                 analysis_level_input = input
                 break
-        assert(analysis_level_input),"BIDS app descriptor has no input with id 'analysis_level'"
-        assert(analysis_level_input.get("value-choices")),"Input 'analysis_level' of BIDS app descriptor has no 'value-choices' property"   
+        assert (analysis_level_input), "BIDS app descriptor has no input with id 'analysis_level'"
+        assert (analysis_level_input.get("value-choices")), "Input 'analysis_level' of BIDS app descriptor has no 'value-choices' property"
         return level in analysis_level_input["value-choices"]
 
     def create_RDD(self, sc):
 
-        sub_dir="tar_files"
+        sub_dir = "tar_files"
 
         layout = BIDSLayout(self.bids_dataset)
-        participants = layout.get_subjects()    
+        participants = layout.get_subjects()
 
         # Create RDD of file paths as key and tarred subject data as value
         if self.use_hdfs:
@@ -75,9 +81,9 @@ class SparkBIDS(object):
                 layout.get(subject=sub)
                 self.create_tar_file(sub_dir, "sub-{0}.tar".format(sub), layout.files)
 
-            return sc.binaryFiles("file://"+os.path.abspath(sub_dir))
+            return sc.binaryFiles("file://" + os.path.abspath(sub_dir))
 
-        # Create RDD of tuples containing tuples of subject names and no data    
+        # Create RDD of tuples containing tuples of subject names and no data
         it = iter(participants)
         empty_list = [None] * len(participants)
         list_participants = zip(it, empty_list)
@@ -99,7 +105,7 @@ class SparkBIDS(object):
         status = "SUCCESS" if returncode == 0 else "ERROR"
         timestamp = str(int(time.time() * 1000))
         filename = "{0}.{1}.log".format(timestamp, label)
-        with open(filename,"w") as f:
+        with open(filename, "w") as f:
             f.write(log)
         print(" [ {3} ({0}) ] {1} - {2}".format(returncode, label, filename, status))
 
@@ -109,11 +115,11 @@ class SparkBIDS(object):
 
         # Creates invocation object
         invocation = {}
-        invocation["inputs"] = [ ]
+        invocation["inputs"] = []
         invocation["inputs"].append({"bids_dir": self.bids_dataset})
         invocation["inputs"].append({"output_dir_name": self.output_dir})
         if analysis_level == "participant":
-            invocation["inputs"].append({"analysis_level": "participant"}) 
+            invocation["inputs"].append({"analysis_level": "participant"})
             invocation["inputs"].append({"participant_label": participant_label})
         elif analysis_level == "group":
             invocation["inputs"].append({"analysis_level": "group"})
@@ -121,13 +127,13 @@ class SparkBIDS(object):
         json_invocation = json.dumps(invocation)
 
         # Writes invocation
-        with open(invocation_file,"w") as f:
+        with open(invocation_file, "w") as f:
             f.write(json_invocation)
 
     def get_bids_dataset(self, data, participant_label):
 
         filename = 'sub-{0}.tar'.format(participant_label)
-        tmp_dataset = 'temp_dataset'    
+        tmp_dataset = 'temp_dataset'
         foldername = os.path.join(tmp_dataset, 'sub-{0}'.format(participant_label))
 
         # Save participant byte stream to disk
@@ -145,13 +151,13 @@ class SparkBIDS(object):
 
     def run_participant_analysis(self, participant_label, data):
 
-        if data is not None: # HDFS
+        if data is not None:  # HDFS
             bids_dataset = self.get_bids_dataset(data,
                                                  participant_label)
 
         try:
             os.mkdir(self.output_dir)
-        except OSError as exc: 
+        except OSError as exc:
             if exc.errno == errno.EEXIST and os.path.isdir(self.output_dir):
                 pass
             else:
@@ -195,6 +201,10 @@ class SparkBIDS(object):
         else:
             return open(arg, 'r')
 
-    def get_participant_from_fn(self,filename):
+    def get_participant_from_fn(self, filename):
         if filename.endswith(".tar"): return filename.split('-')[-1][:-4]
         return filename
+
+    def check_failure(self, result):
+        (label, (log, returncode)) = result
+        return True if returncode !=0 else False
