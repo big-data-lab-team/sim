@@ -2,7 +2,7 @@ from setuptools import setup
 
 VERSION = "0.1.3"
 DEPS = [
-    "boutiques",
+    "boutiques=>0.5.3",
     "pybids",
     "pyspark",
     "pytest-runner"
