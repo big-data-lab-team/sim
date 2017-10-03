@@ -1,5 +1,6 @@
 import os, pytest, random, subprocess, time
 from unittest import TestCase
+import boutiques
 
 class TestSim(TestCase):
 
@@ -39,9 +40,7 @@ class TestSim(TestCase):
       
    ## TESTS
    def test_demo_descriptor_valid(self):
-      self.assertFalse(subprocess.call(["bosh-validate",
-                                        self.get_json_descriptor()
-                                        ,"-b"]))
+      self.assertFalse(boutiques.validate(self.get_json_descriptor(),"-b"))
 
    def test_spark_bids_no_option(self):
       self.run_spark_bids()
