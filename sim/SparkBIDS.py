@@ -205,5 +205,4 @@ class SparkBIDS(object):
         return filename
     def check_failure(self, result):
         (label, (log, returncode)) = result
-        #return True if returncode !=0 else False
-        return True
+        return True if returncode !=0 else False
