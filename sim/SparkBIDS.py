@@ -42,6 +42,11 @@ class SparkBIDS(object):
 
             for result in mapped.collect():
                 self.pretty_print(result)
+                if self.check_failure(result):
+                    # Disable Group Analysis if Participant Analysis Fails
+                    self.do_group_analysis = False
+                    print("ERROR# Participant analysis failed. Group analysis will be aborted.")
+
 
         # Group analysis
         if self.do_group_analysis:
@@ -198,3 +203,7 @@ class SparkBIDS(object):
     def get_participant_from_fn(self,filename):
         if filename.endswith(".tar"): return filename.split('-')[-1][:-4]
         return filename
+    def check_failure(self, result):
+        (label, (log, returncode)) = result
+        #return True if returncode !=0 else False
+        return True
