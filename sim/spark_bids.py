@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from pyspark import SparkContext, SparkConf
-from SparkBIDS import SparkBIDS
+from sim import SparkBIDS
 import argparse, os
 
 def is_valid_file(parser, arg):
