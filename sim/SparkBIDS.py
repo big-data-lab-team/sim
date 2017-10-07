@@ -106,7 +106,7 @@ class SparkBIDS(object):
         filename = "{0}.{1}.log".format(timestamp, label)
         with open(filename,"w") as f:
             f.write(log)
-        print(" [ {3} ({0}) ] {1} - {2}".format(returncode, label, filename, status))
+        print(" [ {0} ({1}) ] {2} - {3}".format(status, returncode, label, filename))
 
     def write_invocation_file(self, analysis_level, participant_label, invocation_file):
 
@@ -197,5 +197,5 @@ class SparkBIDS(object):
         if filename.endswith(".tar"): return filename.split('-')[-1][:-4]
         return filename
     def check_failure(self, result):
-        (label, (log, returncode)) = result
+        (label, (returncode, log)) = result
         return True if returncode !=0 else False
