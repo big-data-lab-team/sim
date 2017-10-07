@@ -1,3 +1,4 @@
+[![PyPI](https://img.shields.io/pypi/v/simtools.svg)](https://pypi.python.org/pypi/simtools)
 [![CircleCI](https://circleci.com/gh/big-data-lab-team/sim/tree/master.svg?style=svg)](https://circleci.com/gh/big-data-lab-team/sim/tree/master)
 
 # Spark for neuroIMaging (sim)

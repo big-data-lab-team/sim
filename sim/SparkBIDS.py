@@ -1,5 +1,5 @@
 from bids.grabbids import BIDSLayout
-import json, os, errno, subprocess, time, tarfile, shutil
+import boutiques, errno, json, os, shutil, subprocess, tarfile, time
 
 class SparkBIDS(object):
 
@@ -42,6 +42,11 @@ class SparkBIDS(object):
 
             for result in mapped.collect():
                 self.pretty_print(result)
+                if self.check_failure(result):
+                    # Disable Group Analysis if Participant Analysis Fails
+                    self.do_group_analysis = False
+                    print("ERROR# Participant analysis failed. Group analysis will be aborted.")
+
 
         # Group analysis
         if self.do_group_analysis:
@@ -95,7 +100,7 @@ class SparkBIDS(object):
                 tar.add(f)
 
     def pretty_print(self, result):
-        (label, (log, returncode)) = result
+        (label, (returncode, log)) = result
         status = "SUCCESS" if returncode == 0 else "ERROR"
         timestamp = str(int(time.time() * 1000))
         filename = "{0}.{1}.log".format(timestamp, label)
@@ -109,14 +114,13 @@ class SparkBIDS(object):
 
         # Creates invocation object
         invocation = {}
-        invocation["inputs"] = [ ]
-        invocation["inputs"].append({"bids_dir": self.bids_dataset})
-        invocation["inputs"].append({"output_dir_name": self.output_dir})
+        invocation["bids_dir"] = self.bids_dataset
+        invocation["output_dir_name"] = self.output_dir
         if analysis_level == "participant":
-            invocation["inputs"].append({"analysis_level": "participant"}) 
-            invocation["inputs"].append({"participant_label": participant_label})
+            invocation["analysis_level"] = "participant"
+            invocation["participant_label"] = participant_label
         elif analysis_level == "group":
-            invocation["inputs"].append({"analysis_level": "group"})
+            invocation["analysis_level"] = "group"
 
         json_invocation = json.dumps(invocation)
 
@@ -176,18 +180,12 @@ class SparkBIDS(object):
         return ("group", exec_result)
 
     def bosh_exec(self, invocation_file):
-        run_command = "bosh {0} -i {1} -e -d".format(self.boutiques_descriptor, invocation_file)
-        result = None
         try:
-            log = subprocess.check_output(run_command, shell=True, stderr=subprocess.STDOUT)
-            result = (log, 0)
-        except subprocess.CalledProcessError as e:
-            result = (e.output, e.returncode)
-        try:
-            shutil.rmtree(label)
-        except:
-            pass
-        return result
+            boutiques.execute("launch",self.boutiques_descriptor,invocation_file, "-x")
+            result = 0
+        except SystemExit as e:            
+            result = e.code
+        return (result, "Empty log, Boutiques API doesn't return it yet.\n")
 
     def is_valid_file(parser, arg):
         if not os.path.exists(arg):
@@ -198,3 +196,6 @@ class SparkBIDS(object):
     def get_participant_from_fn(self,filename):
         if filename.endswith(".tar"): return filename.split('-')[-1][:-4]
         return filename
+    def check_failure(self, result):
+        (label, (log, returncode)) = result
+        return True if returncode !=0 else False
