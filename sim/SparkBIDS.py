@@ -1,13 +1,13 @@
 from bids.grabbids import BIDSLayout
 import boutiques, errno, json, os, shutil, subprocess, tarfile, time
+from Sim import Sim
 
-class SparkBIDS(object):
+class SparkBIDS(Sim):
 
     def __init__(self, boutiques_descriptor, bids_dataset, output_dir, options={}):
      
-        self.boutiques_descriptor = os.path.join(os.path.abspath(boutiques_descriptor))
-        self.bids_dataset = bids_dataset
-        self.output_dir = output_dir
+        super(SparkBIDS, self).__init__(os.path.abspath(boutiques_descriptor), bids_dataset, output_dir)
+
         
         # Includes: use_hdfs, skip_participant_analysis,
         # skip_group_analysis, skip_participants_file
@@ -71,7 +71,7 @@ class SparkBIDS(object):
 
         sub_dir="tar_files"
 
-        layout = BIDSLayout(self.bids_dataset)
+        layout = BIDSLayout(self.input_path)
         participants = layout.get_subjects()    
 
         # Create RDD of file paths as key and tarred subject data as value
@@ -88,45 +88,6 @@ class SparkBIDS(object):
         list_participants = zip(it, empty_list)
 
         return sc.parallelize(list_participants)
-
-    def create_tar_file(self, out_dir, tar_name, files):
-        try:
-            os.makedirs(out_dir)
-        except OSError as e:
-            if e.errno != errno.EEXIST:
-                raise
-        with tarfile.open(os.path.join(out_dir, tar_name), "w") as tar:
-            for f in files:
-                tar.add(f)
-
-    def pretty_print(self, result):
-        (label, (returncode, log)) = result
-        status = "SUCCESS" if returncode == 0 else "ERROR"
-        timestamp = str(int(time.time() * 1000))
-        filename = "{0}.{1}.log".format(timestamp, label)
-        with open(filename,"w") as f:
-            f.write(log)
-        print(" [ {0} ({1}) ] {2} - {3}".format(status, returncode, label, filename))
-
-    def write_invocation_file(self, analysis_level, participant_label, invocation_file):
-
-        # Note: the invocation file format will change soon
-
-        # Creates invocation object
-        invocation = {}
-        invocation["bids_dir"] = self.bids_dataset
-        invocation["output_dir_name"] = self.output_dir
-        if analysis_level == "participant":
-            invocation["analysis_level"] = "participant"
-            invocation["participant_label"] = participant_label
-        elif analysis_level == "group":
-            invocation["analysis_level"] = "group"
-
-        json_invocation = json.dumps(invocation)
-
-        # Writes invocation
-        with open(invocation_file,"w") as f:
-            f.write(json_invocation)
 
     def get_bids_dataset(self, data, participant_label):
 
@@ -145,7 +106,7 @@ class SparkBIDS(object):
 
         os.remove(filename)
 
-        return os.path.join(tmp_dataset, os.path.abspath(self.bids_dataset))
+        return os.path.join(tmp_dataset, os.path.abspath(self.input_path))
 
     def run_participant_analysis(self, participant_label, data):
 
@@ -179,23 +140,7 @@ class SparkBIDS(object):
         os.remove(invocation_file)
         return ("group", exec_result)
 
-    def bosh_exec(self, invocation_file):
-        try:
-            boutiques.execute("launch",self.boutiques_descriptor,invocation_file, "-x")
-            result = 0
-        except SystemExit as e:            
-            result = e.code
-        return (result, "Empty log, Boutiques API doesn't return it yet.\n")
-
-    def is_valid_file(parser, arg):
-        if not os.path.exists(arg):
-            parser.error("The file %s does not exist!" % arg)
-        else:
-            return open(arg, 'r')
 
     def get_participant_from_fn(self,filename):
         if filename.endswith(".tar"): return filename.split('-')[-1][:-4]
         return filename
-    def check_failure(self, result):
-        (label, (returncode, log)) = result
-        return True if returncode !=0 else False
