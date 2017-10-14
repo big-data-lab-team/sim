@@ -61,7 +61,7 @@ class TestSim(TestCase):
       participant_file = "skip.txt"
       with open(participant_file,"w") as f:
          f.write("01")
-      self.run_spark_bids(options=["--skip-participants", os.path.join(os.path.dirname(__file__),"skip.txt")],correctBrainSize="865472")
+      self.run_spark_bids(options=["--skip-participants", "skip.txt"],correctBrainSize="865472")
    
    @pytest.mark.skipif(not module_exists("hdfs"), reason="HDFS not installed")   
    def test_spark_bids_hdfs(self):
