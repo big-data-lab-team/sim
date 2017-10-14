@@ -1,11 +1,19 @@
-FROM mesosphere/spark:2.0.0-2.2.0-1-hadoop-2.6
+FROM jupyter/pyspark-notebook:281505737f8a
 
-RUN sudo apt-get update && apt-get -y upgrade && apt-get -y install docker.io \
-    python-setuptools && \
-    easy_install pip 
+USER root
 
+RUN apt-get update && \
+    echo 'Y' | apt-get install apt-utils && \
+    echo 'Y' | apt-get install curl && \
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo apt-key add - && \
+    echo 'Y' | apt install --reinstall base-files lsb-release lsb-base && \
+    echo 'Y' | apt-get install software-properties-common && \
+    echo 'Y' | apt-get install apt-transport-https && \
+    add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $( lsb_release -cs ) stable" && \
+    apt-get update && \
+    apt-get install -y docker-ce && \
+    service docker start
 
-
-RUN pip install boutiques pytest pyspark pybids
+RUN pip install boutiques pytest pyspark pybids duecredit
 
 ENTRYPOINT ["pytest"]

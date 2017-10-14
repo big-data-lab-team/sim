@@ -20,6 +20,8 @@ class SparkBIDS(Sim):
                                                  and not self.skip_group_analysis
         self.skipped_participants = self.skip_participants_file.read().split() if self.skip_participants_file else []
 
+        print(self.skipped_participants)
+
         # Print analysis summary
         print("Computed Analyses: Participant [ {0} ] - Group [ {1} ]".format(str(self.do_participant_analysis).upper(),
                                                                               str(self.do_group_analysis).upper()))
