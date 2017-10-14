@@ -123,20 +123,20 @@ class SparkBIDS(Sim):
                 raise
 
         invocation_file = "./invocation-{0}.json".format(participant_label)
-        self.write_invocation_file("participant",
+        self.write_BIDS_invocation("participant",
                                    participant_label,
                                    invocation_file)
 
-        exec_result = self.bosh_exec(invocation_file)
+        exec_result = self.bosh_exec(invocation_file, os.path.dirname(os.path.abspath(self.input_path)))
         os.remove(invocation_file)
         return (participant_label, exec_result)
 
     def run_group_analysis(self):
         invocation_file = "./invocation-group.json"
-        self.write_invocation_file("group",
+        self.write_BIDS_invocation("group",
                                    None,
                                    invocation_file)
-        exec_result = self.bosh_exec(invocation_file)
+        exec_result = self.bosh_exec(invocation_file, os.path.dirname(os.path.abspath(self.input_path)))
         os.remove(invocation_file)
         return ("group", exec_result)
 
