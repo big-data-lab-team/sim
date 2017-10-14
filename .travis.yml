@@ -8,21 +8,10 @@ services:
 
 python:
 - 2.7
-- 3.5
-- 3.6
-- nightly
 
 before_install:
 - docker build -t simtool . 
 - docker run --privileged --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD/sim simtool ./tests
-
-install:
-- pip install coveralls pytest pytest-runner
-- pip install ./sim
-
-script:
-- spark_bids.py ./test/demo/bids-app-example.json ./test/demo/ds001 output
-- coverage run --source boutiques setup.py pytest
 
 after_success:
 - coveralls

@@ -1,4 +1,4 @@
-FROM jupyter/pyspark-notebook:281505737f8a
+FROM jupyter/pyspark-notebook:82b978b3ceeb
 
 USER root
 
@@ -14,6 +14,18 @@ RUN apt-get update && \
     apt-get install -y docker-ce && \
     service docker start
 
-RUN pip install boutiques pytest pyspark pybids duecredit
+
+#RUN echo "alias python='/usr/bin/python2.7'" >> ~/.bashrc && . ~/.bashrc
+
+#RUN pip install boutiques pytest pyspark pybids duecredit
+
+RUN conda create -n simenv python=2.7 pytest pyspark
+
+ENV PATH /opt/conda/envs/simenv/bin:$PATH
+
+RUN /bin/bash -c "source activate simenv"
+
+RUN pip install boutiques pybids duecredit
+#RUN pip2 install boutiques pytest pyspark pybids duecredit
 
 ENTRYPOINT ["pytest"]
