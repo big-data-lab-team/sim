@@ -14,7 +14,7 @@ python:
 
 before_install:
 - docker build -t simtool . 
-- docker run --privileged --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD simtool ./test
+- docker run --privileged --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD simtool ./sim/tests
 
 install:
 - pip install coveralls pytest pytest-runner
