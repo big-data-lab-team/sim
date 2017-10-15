@@ -14,12 +14,12 @@ RUN apt-get update && \
     apt-get install -y docker-ce && \
     service docker start
 
-RUN conda create -n simenv python=2.7 pytest pyspark
+RUN conda create -n simenv python=2.7 pytest py4j==0.10.4  pyspark pytest-cov
 
 ENV PATH /opt/conda/envs/simenv/bin:$PATH
 
 RUN /bin/bash -c "source activate simenv"
 
-RUN pip install boutiques pybids duecredit
+RUN pip install boutiques pybids duecredit nipype
 
-ENTRYPOINT ["pytest"]
+ENTRYPOINT ["/bin/bash"]

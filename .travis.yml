@@ -15,7 +15,7 @@ before_script:
 - docker build -t simtool .
 
 script: 
-- docker run --privileged --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD/sim simtool ./tests
+- docker run --privileged --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD/sim simtool ./tests/execute_pytest.sh
 
 after_success:
 - coveralls
