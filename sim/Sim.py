@@ -18,20 +18,9 @@ class Sim(object):
             for f in files:
                 tar.add(f)
 
-    def write_invocation_file(self, analysis_level, participant_label, invocation_file):
+    def write_invocation_file(self, invocation, invocation_file):
 
         # Note: the invocation file format will change soon
-
-        # Creates invocation object
-        invocation = {}
-        invocation["bids_dir"] = self.input_path
-        invocation["output_dir_name"] = self.output_dir
-        if analysis_level == "participant":
-            invocation["analysis_level"] = "participant"
-            invocation["participant_label"] = participant_label
-        elif analysis_level == "group":
-            invocation["analysis_level"] = "group"
-
         json_invocation = json.dumps(invocation)
 
         # Writes invocation
@@ -64,8 +53,16 @@ class Sim(object):
         (label, (returncode, log)) = result
         return True if returncode !=0 else False
     
-    def is_valid_file(parser, arg):
-        if not os.path.exists(arg):
-            parser.error("The file %s does not exist!" % arg)
-        else:
-            return open(arg, 'r')
+    
+    def write_BIDS_invocation(self, analysis_level, participant_label, invocation_file):
+        
+        invocation = {}
+        invocation["bids_dir"] = self.input_path
+        invocation["output_dir_name"] = self.output_dir
+        if analysis_level == "participant":
+            invocation["analysis_level"] = "participant"
+            invocation["participant_label"] = participant_label
+        elif analysis_level == "group":
+            invocation["analysis_level"] = "group"
+
+        self.write_invocation_file(invocation, invocation_file)

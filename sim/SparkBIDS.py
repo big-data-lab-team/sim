@@ -20,6 +20,8 @@ class SparkBIDS(Sim):
                                                  and not self.skip_group_analysis
         self.skipped_participants = self.skip_participants_file.read().split() if self.skip_participants_file else []
 
+        print(self.skipped_participants)
+
         # Print analysis summary
         print("Computed Analyses: Participant [ {0} ] - Group [ {1} ]".format(str(self.do_participant_analysis).upper(),
                                                                               str(self.do_group_analysis).upper()))
@@ -123,20 +125,20 @@ class SparkBIDS(Sim):
                 raise
 
         invocation_file = "./invocation-{0}.json".format(participant_label)
-        self.write_invocation_file("participant",
+        self.write_BIDS_invocation("participant",
                                    participant_label,
                                    invocation_file)
 
-        exec_result = self.bosh_exec(invocation_file)
+        exec_result = self.bosh_exec(invocation_file, os.path.dirname(os.path.abspath(self.input_path)))
         os.remove(invocation_file)
         return (participant_label, exec_result)
 
     def run_group_analysis(self):
         invocation_file = "./invocation-group.json"
-        self.write_invocation_file("group",
+        self.write_BIDS_invocation("group",
                                    None,
                                    invocation_file)
-        exec_result = self.bosh_exec(invocation_file)
+        exec_result = self.bosh_exec(invocation_file, os.path.dirname(os.path.abspath(self.input_path)))
         os.remove(invocation_file)
         return ("group", exec_result)
 
