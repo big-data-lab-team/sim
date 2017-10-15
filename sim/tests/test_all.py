@@ -5,13 +5,6 @@ import boutiques
 class TestSim(TestCase):
 
    ## UTILITY METHODS
-   def module_exists(module):
-      try:
-         __import__(module)
-      except:
-         return False
-      else:
-         return True
 
    def get_sim_dir(self):
       return os.path.join(os.path.dirname(__file__),"..")
@@ -63,8 +56,8 @@ class TestSim(TestCase):
          f.write("01")
       self.run_spark_bids(options=["--skip-participants", "skip.txt"],correctBrainSize="865472")
    
-   @pytest.mark.skipif(not module_exists("hdfs"), reason="HDFS not installed")   
    def test_spark_bids_hdfs(self):
+      pytest.importorskip("hdfs")   
       self.run_spark_bids(options=["--hdfs"])
 
       
