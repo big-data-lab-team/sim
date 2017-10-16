@@ -1,5 +1,6 @@
 [![PyPI](https://img.shields.io/pypi/v/simtools.svg)](https://pypi.python.org/pypi/simtools)
 [![Build Status](https://travis-ci.org/big-data-lab-team/sim.svg?branch=master)](https://travis-ci.org/big-data-lab-team/sim)
+[![Coverage Status](https://coveralls.io/repos/github/big-data-lab-team/sim/badge.svg?branch=master)](https://coveralls.io/github/big-data-lab-team/sim?branch=master)
 
 # Spark for neuroIMaging (sim)
 
