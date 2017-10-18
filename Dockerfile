@@ -24,6 +24,6 @@ ENV PYTHONPATH /opt/conda/envs/python2/lib/python2.7/site-packages:\
     /usr/local/spark-2.2.0-bin-hadoop2.7/python:\
     /opt/conda/envs/python2/bin:$PYTHONPATH
 
-RUN pip install boutiques pybids duecredit nipype
+RUN pip install boutiques pybids nipype
 
 ENTRYPOINT ["/bin/bash"]
