@@ -18,7 +18,7 @@ script:
 - docker run --privileged --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD/sim bigdatalabteam/sparkdocker ./tests/execute_pytest.sh
 
 after_success:
-- coveralls
+- coveralls --data_file=.coverage
 
 deploy:
 
