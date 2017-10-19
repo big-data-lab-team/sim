@@ -9,7 +9,8 @@ services:
 python:
 - 2.7
 
-install: true
+install:
+- pip install coveralls
 
 before_script:
 - docker pull bigdatalabteam/sparkdocker
