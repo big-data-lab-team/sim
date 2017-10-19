@@ -4,7 +4,8 @@ VERSION = "0.1.3"
 DEPS = [
     "boutiques",
     "pybids",
-    "pyspark"
+    "pyspark",
+    "pytest-runner"
 ]
 
 setup(name="simtools",
@@ -16,8 +17,8 @@ setup(name="simtools",
       license="GPL3.0",
       packages=["sim"],
       include_package_data=True,
-      test_suite="nose.collector",
-      tests_require=["nose"],
+      test_suite="pytest",
+      tests_require=["pytest"],
       setup_requires=DEPS,
       install_requires=DEPS,
       entry_points = {
