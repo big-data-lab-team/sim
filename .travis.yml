@@ -20,8 +20,6 @@ script:
 
 after_success:
 - cd ./sim
-- ls
-- coveralls debug
 - coveralls
 
 deploy:
