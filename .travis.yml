@@ -9,15 +9,17 @@ services:
 python:
 - 2.7
 
-install: true
+install:
+- pip install coveralls
 
 before_script:
-- docker build -t simtool .
+- docker pull bigdatalabteam/sparkdocker
 
 script: 
-- docker run --privileged --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD/sim simtool ./tests/execute_pytest.sh
+- docker run --privileged --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD/sim bigdatalabteam/sparkdocker ./tests/execute_pytest.sh
 
 after_success:
+- cd ./sim
 - coveralls
 
 deploy:
