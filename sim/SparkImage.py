@@ -1,4 +1,4 @@
-import boutiques, errno, json, os, sys, shutil, subprocess, time
+import errno, json, os, sys
 from Sim import Sim
 
 class SparkNeuroImage(Sim):
