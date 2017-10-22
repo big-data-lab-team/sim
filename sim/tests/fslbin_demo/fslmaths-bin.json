@@ -2,7 +2,7 @@
     "name" : "fslmaths binarise",
     "tool-version" : "dev",
     "description" : "See https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/Fslutils",
-    "command-line" : "fslmaths INPUT_FILE [THRESHOLD] [BINARISE] OUTPUT_FILE",
+    "command-line" : "mkdir -p $(dirname OUTPUT_FILE); fslmaths INPUT_FILE [THRESHOLD] [BINARISE] OUTPUT_FILE",
     "container-image": {
         "type": "docker",
         "image": "bigdatalabteam/hcp-prefreesurfer:exec-centos7-fslbuild-centos5-latest"
