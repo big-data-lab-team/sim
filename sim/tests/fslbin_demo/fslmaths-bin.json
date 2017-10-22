@@ -1,0 +1,58 @@
+{
+    "name" : "fslmaths binarise",
+    "tool-version" : "dev",
+    "description" : "See https://fsl.fmrib.ox.ac.uk/fsl/fslwiki/Fslutils",
+    "command-line" : "fslmaths INPUT_FILE [THRESHOLD] [BINARISE] OUTPUT_FILE",
+    "container-image": {
+        "type": "docker",
+        "image": "bigdatalabteam/hcp-prefreesurfer:exec-centos7-fslbuild-centos5-latest"
+    },
+    "schema-version" : "0.5",
+    "inputs" : [
+        {
+            "id" : "input_file",
+            "name" : "Input file",
+            "type" : "File",
+            "description" : "The input file to be binarized",
+            "value-key" : "INPUT_FILE",
+            "optional" : false
+        
+        },{
+            "command-line-flag" : "-thr",
+            "id" : "threshold",
+            "name" : "Threshold value",
+            "type" : "Number",
+            "integer" : false,
+            "description": "use following number to threshold current image (zero anything below the number)",
+            "value-key" : "[THRESHOLD]",
+            "optional" : false
+
+        },{
+            "command-line-flag" : "-bin",
+            "id" : "binarise",
+            "name" : "Binarise image",
+            "type" : "Flag",
+            "description": "use (current image>0) to binarise",
+            "value-key" : "[BINARISE]",
+            "optional" : true
+
+        },{
+            "id" : "output_filename",
+            "name" : "Output file",
+            "type" : "String",
+            "value-key" : "OUTPUT_FILE",
+            "description": "The output image filename to which the results will be save",
+            "optional" : false
+        }
+    ],
+    
+    "output-files" : [
+        {
+            "id" : "output_file",
+            "name" : "Output file",
+            "description": "The image file to which the results will be saved",
+            "path-template" : "OUTPUT_FILE.gz",
+            "optional" : false
+        }
+    ]
+}
