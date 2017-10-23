@@ -1,0 +1,26 @@
+language: python
+
+sudo: required
+
+services:
+- docker
+- privileged: true
+
+python:
+- 2.7
+
+install:
+- pip install coveralls
+
+before_script:
+- docker pull bigdatalabteam/sparkdocker
+
+script: 
+- docker run --privileged --rm=false -v /var/run/docker.sock:/var/run/docker.sock -v $PWD:$PWD -w $PWD/sim bigdatalabteam/sparkdocker ./tests/execute_pytest.sh
+
+after_success:
+- cd ./sim
+- coveralls
+
+deploy:
+

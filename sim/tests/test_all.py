@@ -1,14 +1,13 @@
 import os, pytest, random, subprocess, time
 from unittest import TestCase
-
-#def test_bids_validator():
- #   subprocess.call(["bids-validator","../demo/ds001"])
+import boutiques
 
 class TestSim(TestCase):
 
    ## UTILITY METHODS
+
    def get_sim_dir(self):
-      return os.path.join(os.path.dirname(__file__),"../sim")
+      return os.path.join(os.path.dirname(__file__),"..")
    
    def get_demo_dir(self):
       return os.path.join(os.path.dirname(__file__),"demo")
@@ -30,9 +29,9 @@ class TestSim(TestCase):
       try:
          stdout_string = subprocess.check_output(command,
                                                  stderr=subprocess.STDOUT)
-      except:
+      except subprocess.CalledProcessError as e:
          self.assertTrue(False,"Command-line execution failed {0}".format(str(command)))
-      self.assertTrue("ERROR" not in stdout_string)
+      self.assertTrue(bytes("ERROR") not in stdout_string)
       if checkOutputGroup:
          assert(os.path.isfile(os.path.join(output_name,"avg_brain_size.txt")))
          with open(os.path.join(output_name,"avg_brain_size.txt")) as f:
@@ -42,9 +41,7 @@ class TestSim(TestCase):
       
    ## TESTS
    def test_demo_descriptor_valid(self):
-      self.assertFalse(subprocess.call(["bosh-validate",
-                                        self.get_json_descriptor()
-                                        ,"-b"]))
+      self.assertFalse(boutiques.validate(self.get_json_descriptor(),"-b"))
 
    def test_spark_bids_no_option(self):
       self.run_spark_bids()
@@ -57,9 +54,10 @@ class TestSim(TestCase):
       participant_file = "skip.txt"
       with open(participant_file,"w") as f:
          f.write("01")
-      self.run_spark_bids(options=["--skip-participants","skip.txt"],correctBrainSize="865472")
-      
+      self.run_spark_bids(options=["--skip-participants", "skip.txt"],correctBrainSize="865472")
+   
    def test_spark_bids_hdfs(self):
+      pytest.importorskip("hdfs")   
       self.run_spark_bids(options=["--hdfs"])
 
       
