@@ -1,4 +1,4 @@
-import os, pytest, random, subprocess
+import subprocess, os
 from unittest import TestCase
 
 import sys
