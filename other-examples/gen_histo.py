@@ -2,7 +2,6 @@ import nibabel as nib
 import numpy as np
 import argparse
 import os
-import time
 
 
 def create_histo(folder_path, min_val, max_val, num_bins=None):
@@ -10,6 +9,8 @@ def create_histo(folder_path, min_val, max_val, num_bins=None):
     if num_bins is None:
         num_bins = int(max_val - min_val)    
         print num_bins
+
+    assert num_bins > 0
 
     histogram = {}
 
@@ -29,9 +30,7 @@ def create_histo(folder_path, min_val, max_val, num_bins=None):
                 histogram[el] = hist[count]
             count += 1
 
-    return histogram.items()
-        
-
+    return sorted(histogram.items())
 
 def main():
 
@@ -41,9 +40,6 @@ def main():
 
     args = parser.parse_args()
 
-    min_time, max_time = 0
-
-    
     min_v = None
     max_v = None
 
@@ -52,16 +48,9 @@ def main():
         im = nib.load(os.path.join(args.folder_path, f))
         data = im.get_data()
 
-        t = time()
         tmp_min = np.min(data)
-        min_time += time() - t
-
-        t = time()
         tmp_max = np.max(data)
-        max_time += time() - 1
-    
 
-        t = time()
         if min_v is None or tmp_min < min_v:
             min_v = tmp_min
         if max_v is None or tmp_max > max_v:
