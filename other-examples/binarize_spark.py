@@ -15,14 +15,12 @@ def save_nifti(x, output, hdfs, client=None):
     client = Config().get_client('dev')
     filename = x[0].split('/')[-1]
     im = nib.Nifti1Image(x[1][1], x[1][0])
-    if hdfs:
+    if hdfs & hdfs_status():
         nib.save(im, filename)
-        if hdfs_status():
-            print("HDFS is up")
-            client.upload(output, filename, overwrite=True)
-        else:
-            print("HDFS is not running.")
+        client.upload(output, filename, overwrite=True)
     else:
+        if hdfs:
+            print "EXCEPTION# Writing to local file system as HDFS is not up."
         with open(os.path.join(output, filename), "w") as file1:
             file1.write(str(im))
     return (x[0], 0)
@@ -50,17 +48,17 @@ def main():
 
     parser = argparse.ArgumentParser(description='Binarize images')
     parser.add_argument('threshold', type=int, help="binarization threshold")
-    parser.add_argument('folder_path', type=str, help='folder path containing all of the splits')
+    parser.add_argument('input_path', type=str, help='folder path containing all of the splits')
     parser.add_argument('output_path', type=str, help='output folder path')
     parser.add_argument('num', type=int, choices=[2, 4, 6, 8], help='number of binarization operations')
     parser.add_argument("--hdfs", action='store_true', help="Use HDFS")
-    parser.add_argument('-m', '--in_memory', type=bool, default=True, help='in memory computation')
+    parser.add_argument('--tmpfs', action='store_true', help='in memory computation')
 
     args = parser.parse_args()
-    nibRDD = sc.binaryFiles(args.folder_path) \
+    nibRDD = sc.binaryFiles(args.input_path) \
         .map(lambda x: get_data(x))
 
-    if args.in_memory == 'True':
+    if args.tmpfs:
         print "Performing in-memory computations"
 
         for i in xrange(args.num - 1):
