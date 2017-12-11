@@ -1,5 +1,4 @@
 import subprocess, os
-from logilab.common import pytest
 from unittest import TestCase
 import unittest
 import sys
