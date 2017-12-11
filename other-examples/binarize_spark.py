@@ -8,19 +8,16 @@ import numpy as np
 import argparse
 import os
 from hdfs import Config
-from common_functions import hdfs_status
 
 
 def save_nifti(x, output, hdfs, client=None):
     client = Config().get_client('dev')
     filename = x[0].split('/')[-1]
     im = nib.Nifti1Image(x[1][1], x[1][0])
-    if hdfs & hdfs_status():
+    if hdfs:
         nib.save(im, filename)
         client.upload(output, filename, overwrite=True)
     else:
-        if hdfs:
-            print "EXCEPTION# Writing to local file system as HDFS is not up."
         with open(os.path.join(output, filename), "w") as file1:
             file1.write(str(im))
     return (x[0], 0)
@@ -68,10 +65,10 @@ def main():
     else:
         print "Writing intermediary results to disk and loading from disk"
 
-        binRDD = nibRDD.map(lambda x: binarize_and_save(x, args.threshold, args.output_path + "1", args.hdfs)).collect()
+        binRDD = nibRDD.map(lambda x: binarize_and_save(x, args.threshold, args.output_path, args.hdfs)).collect()
 
         for i in xrange(args.num - 1):
-            binRDD = sc.binaryFiles(args.output_path + "1") \
+            binRDD = sc.binaryFiles(args.output_path) \
                 .map(lambda x: get_data(x)) \
                 .map(lambda x: binarize_and_save(x, args.threshold, args.output_path + "1", args.hdfs)).collect()
 

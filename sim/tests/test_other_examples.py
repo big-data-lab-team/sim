@@ -1,21 +1,25 @@
 import subprocess, os
+from logilab.common import pytest
 from unittest import TestCase
 import unittest
 import sys
 
 
 def hdfs_status():
-    proc = subprocess.Popen("jps", stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    s_output, s_err = proc.communicate()
-    s_return = proc.returncode
-    return s_return, s_output, s_err
-    if ret != 0:
-        return False
-    else:
-         if ('SecondaryNameNode' not in out) & ('DataNode' not in out) & ('NameNode' not in out):
+    try:
+        proc = subprocess.Popen("jps", stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        s_output, s_err = proc.communicate()
+        s_return = proc.returncode
+        return s_return, s_output, s_err
+        if ret != 0:
             return False
-         else:
-            return True
+        else:
+             if ('SecondaryNameNode' not in out) & ('DataNode' not in out) & ('NameNode' not in out):
+                return False
+             else:
+                return True
+    except:
+        return False
 
 IS_HDFS_UP = hdfs_status()
 class TestOther_examples(TestCase):
@@ -29,12 +33,14 @@ class TestOther_examples(TestCase):
         return os.path.join(os.path.dirname(__file__), "demo/ds001/sub-01/anat")
 
     def get_output_dir(self):
-        return os.path.join(os.path.dirname(__file__), "output")
+
+        return os.path.join(os.path.dirname(__file__), "../../output")
 
     def check_binarize_spark_content(self, output_path):
-        if(os.path.isdir(self.get_output_dir())):
-            if os.listdir(self.get_output_dir()) != "":
+        if(os.path.isdir(output_path)):
+            if os.listdir(output_path) != "":
                 return True
+                print "content exists"
             else:
                 return False
         return True
@@ -58,7 +64,7 @@ class TestOther_examples(TestCase):
 
 
     ## TESTS
-    def test_create_histo(self):
+    def create_histo(self):
         actual_result=""
         command=[os.path.join(self.get_oexamples_dir()
                                        ,"gen_histo.py"),
@@ -76,18 +82,17 @@ class TestOther_examples(TestCase):
     def test_binarize_spark(self):
         self.run_spark_binarize()
 
-    @unittest.skipIf(IS_HDFS_UP, True) #Execute hdfs test only if hdfs is up
+    @unittest.skipIf(IS_HDFS_UP==False, 'test_binarize_spark_hdfs Skipped as HDFS not running/installed.')
     def test_binarize_spark_hdfs(self):
         self.run_spark_binarize(options=["--hdfs"])
 
-    @unittest.skipIf(IS_HDFS_UP,True) #Execute hdfs test only if hdfs is up
+    @unittest.skipIf(IS_HDFS_UP==False, 'test_binarize_spark_hdfs_tmpfs Skipped as HDFS not running/installed.')
     def test_binarize_spark_hdfs_tmpfs(self):
         self.run_spark_binarize(options=["--hdfs","--tmpfs"])
 
 
     def test_binarize_spark_tmpfs(self):
         self.run_spark_binarize(options=["--tmpfs"])
-
 
 
 
